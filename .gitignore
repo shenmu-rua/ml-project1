@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+mlruns/
+mlartifacts/
+.pytest_cache/
+.ruff_cache/
+.idea/
+.vscode/
+# DVC 管理数据，不直接入 git
+/data/raw/*.csv
+/data/processed/*.csv
+/data/processed/*.parquet
