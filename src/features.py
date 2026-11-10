@@ -21,15 +21,42 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.utils.validation import check_is_fitted
 
 from src.astronomy import solar_angles, solar_phase
+from src.participants import feature_names
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = json.loads((ROOT / "schema.json").read_text(encoding="utf-8"))
 TARGET_COLUMN = SCHEMA["target"]["name"]
-NUMERIC_INPUTS = list(SCHEMA["numeric_features"])
+PARTICIPANT_INPUTS = feature_names(SCHEMA)
+NUMERIC_INPUTS = list(SCHEMA["numeric_features"]) + PARTICIPANT_INPUTS
 CATEGORICAL_INPUTS = list(SCHEMA["categorical_features"])
 INPUT_COLUMNS = [SCHEMA["datetime_column"]] + NUMERIC_INPUTS + CATEGORICAL_INPUTS
 NUMERIC_FEATURES = NUMERIC_INPUTS + SCHEMA["engineered_numeric_features"]
 CATEGORICAL_FEATURES = CATEGORICAL_INPUTS + SCHEMA["engineered_categorical_features"]
+# Time and place drive the solar features and cannot be imputed.
+REQUIRED_INPUTS = [SCHEMA["datetime_column"], "latitude", "longitude"]
+# Inputs that one on-scene source supplies together and may be absent together.
+INFO_GROUPS = {
+    "weather": list(SCHEMA["weather"]["core_fields"]),
+    "road": CATEGORICAL_INPUTS + ["speed_limit", "number_of_vehicles"],
+    "vehicle": feature_names(SCHEMA, "vehicle"),
+    "casualty": feature_names(SCHEMA, "casualty"),
+}
+
+
+def complete_inputs(frame):
+    """Accept partial information: absent optional columns become missing values.
+
+    ``model.predict_proba(complete_inputs(partial_frame))`` works with any subset of
+    INFO_GROUPS; the model is trained on rows with these groups blanked.
+    """
+    absent = [
+        name
+        for name in REQUIRED_INPUTS
+        if name not in frame.columns or frame[name].isna().any()
+    ]
+    if absent:
+        raise ValueError(f"Prediction needs time and place: missing {absent}")
+    return frame.reindex(columns=INPUT_COLUMNS)
 
 
 def _check_inputs(frame):

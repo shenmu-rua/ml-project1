@@ -5,10 +5,15 @@ stages:
       - data/dft-road-casualty-statistics-collision-2024.csv
       - data/dft-road-casualty-statistics-collision-2025.csv
       - data/weather_2024_2025.csv
+      - data/dft-road-casualty-statistics-vehicle-2024.csv
+      - data/dft-road-casualty-statistics-vehicle-2025.csv
+      - data/dft-road-casualty-statistics-casualty-2024.csv
+      - data/dft-road-casualty-statistics-casualty-2025.csv
       - schema.json
       - src/data_pipeline.py
       - src/validation.py
       - src/astronomy.py
+      - src/participants.py
     outs:
       - data/processed
     metrics:
@@ -22,6 +27,7 @@ stages:
       - src/data_pipeline.py
       - src/features.py
       - src/validation.py
+      - src/participants.py
     outs:
       - data/splits
     metrics:
@@ -37,6 +43,24 @@ stages:
       - schema.json
     outs:
       - data/eda_figures
+  database:
+    cmd: python -m src.database
+    deps:
+      - data/dft-road-casualty-statistics-collision-2024.csv
+      - data/dft-road-casualty-statistics-collision-2025.csv
+      - data/weather_2024_2025.csv
+      - data/dft-road-casualty-statistics-vehicle-2024.csv
+      - data/dft-road-casualty-statistics-vehicle-2025.csv
+      - data/dft-road-casualty-statistics-casualty-2024.csv
+      - data/dft-road-casualty-statistics-casualty-2025.csv
+      - data/processed/collisions_clean.csv
+      - data/splits/train.csv
+      - data/splits/val.csv
+      - data/splits/test.csv
+      - src/database.py
+      - src/participants.py
+    outs:
+      - data/road_collisions.sqlite
   preprocessing_contract:
     cmd: python -m src.features
     deps:
@@ -45,6 +69,7 @@ stages:
       - data/splits/test.csv
       - src/features.py
       - src/astronomy.py
+      - src/participants.py
       - schema.json
     metrics:
       - data/preprocessing_report.json:

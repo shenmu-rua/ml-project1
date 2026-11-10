@@ -14,6 +14,7 @@ import pandas as pd
 from geographiclib.geodesic import Geodesic
 
 from src.astronomy import add_astronomy
+from src.participants import feature_names, read_participants, table_paths
 from src.validation import load_schema, validate_frame
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -432,7 +433,12 @@ def prepare(data_dir=ROOT / "data"):
         data_dir / f"dft-road-casualty-statistics-collision-{y}.csv"
         for y in (2024, 2025)
     ] + [data_dir / "weather_2024_2025.csv"]
-    hashes = {path.name: sha256(path) for path in paths}
+    participant_paths = [
+        path
+        for table in contract["participants"]
+        for path in table_paths(data_dir, table)
+    ]
+    hashes = {path.name: sha256(path) for path in paths + participant_paths}
     collisions, collision_report = read_collisions(data_dir, contract)
     weather, weather_report = clean_weather(paths[-1], contract)
     print("Raw CSVs read; observed weather values validated.", flush=True)
@@ -456,6 +462,7 @@ def prepare(data_dir=ROOT / "data"):
                 f"Linkage differs from the audited source snapshot: {actual} != {expected}"
             )
     master = add_astronomy(master, progress=True)
+    master = master.join(read_participants(data_dir, contract), on="collision_index")
     validate_frame(master)
     validate_frame(master.loc[master.model_eligible], modeling=True)
     weather.to_csv(
@@ -552,6 +559,7 @@ def split(data_dir=ROOT / "data"):
     }
     keep = ["collision_index", "collision_datetime_utc", "collision_year"]
     keep += list(contract["numeric_features"]) + list(contract["categorical_features"])
+    keep += feature_names(contract)
     keep += [
         "is_severe",
         "weather_id",

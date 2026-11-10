@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pandera.pandas as pa
 
+from src.participants import feature_names
+
 
 def load_schema(path=None):
     path = (
@@ -38,6 +40,8 @@ def dataframe_schema(*, modeling=False):
             and name in ["latitude", "longitude"] + contract["weather"]["core_fields"]
         )
         fields[name] = pa.Column(float, checks, nullable=not required)
+    for name in feature_names(contract):
+        fields[name] = pa.Column(float, pa.Check.ge(0), nullable=True)
     for name, definition in contract["categorical_features"].items():
         fields[name] = pa.Column(
             object, pa.Check.isin(list(definition["categories"])), nullable=True
