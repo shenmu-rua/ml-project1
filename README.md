@@ -1,4 +1,4 @@
-# Churn MLOps：客户流失预测
+# ML-project1：英国车祸数据分析与预测
 
 四人小组机器学习项目：数据 → 分析 → 建模 → 评估 → 上线（Web 预测）。
 完整分工与架构见 [docs/project_plan.md](docs/project_plan.md)。
@@ -15,11 +15,27 @@
 ## 快速开始
 
 ```bash
-python -m venv .venv
+uv venv --python 3.12 .venv
 .venv\Scripts\activate        # Windows
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 pytest
 ```
+
+## 数据与训练
+
+```bash
+python -m src.data_pipeline all   # A：清洗、天气匹配、时间切分（或 dvc repro）
+python -m src.database            # 合并全部 CSV 为 data/road_collisions.sqlite
+python -m src.train               # B：基线 + Optuna 调参 + MLflow 追踪与注册
+mlflow ui --backend-store-uri sqlite:///mlflow.db
+```
+
+原始数据在 `data/`：事故表、车辆表、伤亡表（DfT Road Safety Open Data，2024–2025，
+`https://data.dft.gov.uk/road-accidents-safety-data/`）与天气观测表。车辆表和伤亡表由
+`src/participants.py` 按 `schema.json` 的 `participants` 定义聚合到事故级；伤情结论字段不进入模型。
+
+训练产物为包含预处理的完整 Pipeline，通过 `models:/road-severity-model@production` 加载
+（需在仓库根目录运行，使 `src.features` 可被导入）。
 
 ## 协作规范
 
