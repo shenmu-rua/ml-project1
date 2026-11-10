@@ -1,0 +1,51 @@
+stages:
+  prepare:
+    cmd: python -m src.data_pipeline prepare
+    deps:
+      - data/dft-road-casualty-statistics-collision-2024.csv
+      - data/dft-road-casualty-statistics-collision-2025.csv
+      - data/weather_2024_2025.csv
+      - schema.json
+      - src/data_pipeline.py
+      - src/validation.py
+      - src/astronomy.py
+    outs:
+      - data/processed
+    metrics:
+      - data/quality_report.json:
+          cache: false
+  split:
+    cmd: python -m src.data_pipeline split
+    deps:
+      - data/processed/collisions_clean.csv
+      - schema.json
+      - src/data_pipeline.py
+      - src/features.py
+      - src/validation.py
+    outs:
+      - data/splits
+    metrics:
+      - data/split_report.json:
+          cache: false
+  eda:
+    cmd: python -m src.data_pipeline eda
+    deps:
+      - data/splits/train.csv
+      - src/eda.py
+      - src/features.py
+      - src/astronomy.py
+      - schema.json
+    outs:
+      - data/eda_figures
+  preprocessing_contract:
+    cmd: python -m src.features
+    deps:
+      - data/splits/train.csv
+      - data/splits/val.csv
+      - data/splits/test.csv
+      - src/features.py
+      - src/astronomy.py
+      - schema.json
+    metrics:
+      - data/preprocessing_report.json:
+          cache: false

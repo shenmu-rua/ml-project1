@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0.0",
+  "raw_sha256": {
+    "dft-road-casualty-statistics-collision-2024.csv": "32a78f4662e309160f37b1ea2b82017e85e07b62a022d680da7140e88706a17c",
+    "dft-road-casualty-statistics-collision-2025.csv": "e699c19bdb82e47e449b6f3381ac87631865f6a31cef118c9955ba80ca870e2b",
+    "weather_2024_2025.csv": "419a3682b6c6f16adb210a3e343da339b3797f74822d1c3339c08ae6159a54bb"
+  },
+  "collisions": {
+    "raw_rows": 202452,
+    "exact_duplicate_rows_removed": 0,
+    "conflicting_duplicate_ids": 0,
+    "rows_retained_in_master": 202452,
+    "original_severity_counts": {
+      "3": 150739,
+      "2": 48758,
+      "1": 2955
+    },
+    "invalid_or_unknown_cells_set_missing": {
+      "longitude": 2,
+      "latitude": 2,
+      "speed_limit": 3,
+      "number_of_vehicles": 0,
+      "road_type": 4521,
+      "junction_detail": 15135,
+      "junction_control": 7388,
+      "pedestrian_crossing": 10874,
+      "weather_conditions": 5530,
+      "road_surface_conditions": 4350,
+      "urban_or_rural_area": 7,
+      "first_road_class": 6,
+      "second_road_class": 11386,
+      "light_conditions": 22
+    },
+    "time_issues": {
+      "": 202434,
+      "ambiguous_DST_hour": 18
+    }
+  },
+  "weather": {
+    "input_rows": 369383,
+    "output_rows": 369383,
+    "rows_with_any_observed_field": 369153,
+    "missing_after_source_and_qc_checks": {
+      "temp": 687,
+      "rhum": 774,
+      "prcp": 215956,
+      "wdir": 2495,
+      "wspd": 361,
+      "pres": 98037
+    },
+    "source_rows": {
+      "NOAA_GHCNh": 336585,
+      "COSMOS_UK": 19204,
+      "Meteostat": 13594
+    },
+    "self_imputed_values": 0,
+    "station_pressure_not_used_as_sea_level_pressure": true
+  },
+  "matching": {
+    "accidents": 202452,
+    "any_observed_weather": 202032,
+    "observed_core6_complete": 180518,
+    "core6_all_qc_checkable": 164860,
+    "model_eligible": 164860,
+    "exclusion_reasons": {
+      "": 164860,
+      "core_weather_incomplete": 21914,
+      "weather_qc_not_exposed": 15658,
+      "unresolved_local_time": 18,
+      "invalid_coordinates": 2
+    },
+    "selected_provider_counts": {
+      "NOAA_GHCNh": 176578,
+      "Meteostat": 18174,
+      "COSMOS_UK": 7280
+    },
+    "maximum_distance_km": 39.99937451851451,
+    "maximum_absolute_time_offset_minutes": 60.0
+  },
+  "raw_files_modified": false,
+  "synthetic_weather_values_added": 0,
+  "pandera_master_and_model_checks_passed": true,
+  "astronomy": {
+    "coordinates": "each collision",
+    "library": "Astral 3.2",
+    "observer_elevation_m": 0,
+    "absent_astronomical_twilight_events": 38551
+  }
+}

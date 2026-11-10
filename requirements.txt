@@ -1,3 +1,4 @@
+-r requirements-data.txt
 pandas
 numpy
 scikit-learn

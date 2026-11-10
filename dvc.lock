@@ -1,0 +1,137 @@
+schema: '2.0'
+stages:
+  prepare:
+    cmd: python -m src.data_pipeline prepare
+    deps:
+    - path: data/dft-road-casualty-statistics-collision-2024.csv
+      hash: md5
+      md5: f06e140f1426360d7e09b42003492b7b
+      size: 19208488
+    - path: data/dft-road-casualty-statistics-collision-2025.csv
+      hash: md5
+      md5: bbff536e96b37f9ec14e05da25a7c5bf
+      size: 19349153
+    - path: data/weather_2024_2025.csv
+      hash: md5
+      md5: db130e3002fded73f30c69a9dc838e62
+      size: 63349129
+    - path: schema.json
+      hash: md5
+      md5: 25f93f107197e7d17c71f7b50f87a709
+      size: 9185
+    - path: src/astronomy.py
+      hash: md5
+      md5: 7f7eb5a5c7fe6c27a5274b717dfbf2af
+      size: 3949
+    - path: src/data_pipeline.py
+      hash: md5
+      md5: 34fc54e969637992e36f2a5ef02e1d23
+      size: 24360
+    - path: src/validation.py
+      hash: md5
+      md5: 09b01ac0fe9b67e9043caf9e4121dc7c
+      size: 1840
+    outs:
+    - path: data/processed
+      hash: md5
+      md5: 04110e3ec8197167e2022c94b5d57cef.dir
+      size: 205461704
+      nfiles: 3
+    - path: data/quality_report.json
+      hash: md5
+      md5: a063fbab5e75a6ce218e47c2eb8ecf7f
+      size: 2662
+  split:
+    cmd: python -m src.data_pipeline split
+    deps:
+    - path: data/processed/collisions_clean.csv
+      hash: md5
+      md5: 735c32be1a20688eb775fb7155ab0574
+      size: 122811464
+    - path: schema.json
+      hash: md5
+      md5: 25f93f107197e7d17c71f7b50f87a709
+      size: 9185
+    - path: src/data_pipeline.py
+      hash: md5
+      md5: 34fc54e969637992e36f2a5ef02e1d23
+      size: 24360
+    - path: src/features.py
+      hash: md5
+      md5: 8200e21c442a5a3f8d0022d667b6edab
+      size: 8191
+    - path: src/validation.py
+      hash: md5
+      md5: 09b01ac0fe9b67e9043caf9e4121dc7c
+      size: 1840
+    outs:
+    - path: data/split_report.json
+      hash: md5
+      md5: 7fd7ab28bc45b3fc4d3c28f0a6cff58e
+      size: 1404
+    - path: data/splits
+      hash: md5
+      md5: 3908fbb84e1074612144f0a84bb71d50.dir
+      size: 31078795
+      nfiles: 4
+  eda:
+    cmd: python -m src.data_pipeline eda
+    deps:
+    - path: data/splits/train.csv
+      hash: md5
+      md5: 9e8fbbdee347dad77250b737b0162a89
+      size: 21748661
+    - path: schema.json
+      hash: md5
+      md5: 25f93f107197e7d17c71f7b50f87a709
+      size: 9185
+    - path: src/astronomy.py
+      hash: md5
+      md5: 7f7eb5a5c7fe6c27a5274b717dfbf2af
+      size: 3949
+    - path: src/eda.py
+      hash: md5
+      md5: b8a7db59c6fdce75676c66d246a34566
+      size: 8394
+    - path: src/features.py
+      hash: md5
+      md5: 8200e21c442a5a3f8d0022d667b6edab
+      size: 8191
+    outs:
+    - path: data/eda_figures
+      hash: md5
+      md5: bfdc401daf95dc202317ac9a98d294bb.dir
+      size: 417115
+      nfiles: 8
+  preprocessing_contract:
+    cmd: python -m src.features
+    deps:
+    - path: data/splits/test.csv
+      hash: md5
+      md5: 8d4307303ad02df54c8a794cd649eff4
+      size: 4664703
+    - path: data/splits/train.csv
+      hash: md5
+      md5: 9e8fbbdee347dad77250b737b0162a89
+      size: 21748661
+    - path: data/splits/val.csv
+      hash: md5
+      md5: c849a3291ad2125330c7a5dc106d7eb7
+      size: 4664978
+    - path: schema.json
+      hash: md5
+      md5: 25f93f107197e7d17c71f7b50f87a709
+      size: 9185
+    - path: src/astronomy.py
+      hash: md5
+      md5: 7f7eb5a5c7fe6c27a5274b717dfbf2af
+      size: 3949
+    - path: src/features.py
+      hash: md5
+      md5: 8200e21c442a5a3f8d0022d667b6edab
+      size: 8191
+    outs:
+    - path: data/preprocessing_report.json
+      hash: md5
+      md5: e0d5c7256e1e1a937749fa182c6a6779
+      size: 4748

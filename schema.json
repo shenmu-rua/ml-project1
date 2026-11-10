@@ -1,5 +1,382 @@
 {
-  "_comment": "A 负责起草并维护，所有人确认。字段待数据集确定后补全。",
-  "target": "Churn",
-  "features": {}
+  "schema_version": "1.0.0",
+  "task": "Binary severity prediction among recorded injury collisions",
+  "target": {
+    "name": "is_severe",
+    "dtype": "int64",
+    "negative_label": 0,
+    "positive_label": 1,
+    "source": "collision_severity",
+    "mapping": {
+      "1": 1,
+      "2": 1,
+      "3": 0
+    },
+    "definition_zh": "致死或重伤为1，轻伤为0；不是事故发生概率"
+  },
+  "id_column": "collision_index",
+  "datetime_column": "collision_datetime_utc",
+  "timezone": "Europe/London",
+  "numeric_features": {
+    "longitude": {
+      "min": -9,
+      "max": 3,
+      "unit": "degrees",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "latitude": {
+      "min": 49,
+      "max": 62,
+      "unit": "degrees",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "speed_limit": {
+      "allowed": [
+        20,
+        30,
+        40,
+        50,
+        60,
+        70
+      ],
+      "unit": "mph",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "number_of_vehicles": {
+      "min": 1,
+      "unit": "count",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "temp": {
+      "min": -100,
+      "max": 70,
+      "unit": "degC",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "rhum": {
+      "min": 0,
+      "max": 100,
+      "unit": "percent",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "prcp": {
+      "min": 0,
+      "unit": "mm over one hour",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "wdir": {
+      "min": 0,
+      "max": 360,
+      "unit": "degrees",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "wspd": {
+      "min": 0,
+      "unit": "km/h",
+      "dtype": "float64",
+      "nullable": true
+    },
+    "pres": {
+      "min": 500,
+      "max": 1100,
+      "unit": "hPa, sea level",
+      "dtype": "float64",
+      "nullable": true
+    }
+  },
+  "categorical_features": {
+    "road_type": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "9",
+        "-1"
+      ],
+      "categories": {
+        "1": "Roundabout",
+        "2": "One way street",
+        "3": "Dual carriageway",
+        "6": "Single carriageway",
+        "7": "Slip road",
+        "12": "One way street/Slip road"
+      }
+    },
+    "junction_detail": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "99",
+        "-1"
+      ],
+      "categories": {
+        "0": "Not at junction or within 20 metres",
+        "13": "T or staggered junction",
+        "16": "Crossroads",
+        "17": "Junction with more than four arms (not roundabout)",
+        "18": "Using private drive or entrance",
+        "19": "Other junction"
+      }
+    },
+    "junction_control": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "-1",
+        "9"
+      ],
+      "categories": {
+        "0": "Not at junction or within 20 metres",
+        "1": "Authorised person",
+        "2": "Auto traffic signal",
+        "3": "Stop sign",
+        "4": "Give way or uncontrolled"
+      }
+    },
+    "pedestrian_crossing": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "99",
+        "-1"
+      ],
+      "categories": {
+        "0": "No physical crossing facility within 50m",
+        "11": "Human crossing control by school crossing patrol",
+        "12": "Human crossing control by other authorised person",
+        "13": "Zebra crossing",
+        "14": "Pedestrian light crossing (pelican or puffin or toucan or similar)",
+        "15": "Pedestrian phase at traffic signal",
+        "16": "Footbridge or subway",
+        "17": "Central refuge - no other controls"
+      }
+    },
+    "weather_conditions": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "9",
+        "-1"
+      ],
+      "categories": {
+        "1": "Fine no high winds",
+        "2": "Raining no high winds",
+        "3": "Snowing no high winds",
+        "4": "Fine + high winds",
+        "5": "Raining + high winds",
+        "6": "Snowing + high winds",
+        "7": "Fog or mist",
+        "8": "Other"
+      }
+    },
+    "road_surface_conditions": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "-1",
+        "9"
+      ],
+      "categories": {
+        "1": "Dry",
+        "2": "Wet or damp",
+        "3": "Snow",
+        "4": "Frost or ice",
+        "5": "Flood over 3cm. deep",
+        "6": "Oil or diesel",
+        "7": "Mud"
+      }
+    },
+    "urban_or_rural_area": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "3",
+        "-1"
+      ],
+      "categories": {
+        "1": "Urban",
+        "2": "Rural"
+      }
+    },
+    "first_road_class": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "-1"
+      ],
+      "categories": {
+        "1": "Motorway",
+        "2": "A(M)",
+        "3": "A",
+        "4": "B",
+        "5": "C",
+        "6": "Unclassified"
+      }
+    },
+    "second_road_class": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "9",
+        "-1"
+      ],
+      "categories": {
+        "0": "Not at junction or within 20 metres",
+        "1": "Motorway",
+        "2": "A(M)",
+        "3": "A",
+        "4": "B",
+        "5": "C",
+        "6": "Unclassified"
+      }
+    },
+    "light_conditions": {
+      "dtype": "string",
+      "nullable": true,
+      "missing_codes": [
+        "-1"
+      ],
+      "categories": {
+        "1": "Daylight",
+        "4": "Darkness - lights lit",
+        "5": "Darkness - lights unlit",
+        "6": "Darkness - no lighting",
+        "7": "Darkness - lighting unknown"
+      }
+    }
+  },
+  "engineered_numeric_features": [
+    "hour_sin",
+    "hour_cos",
+    "weekday_sin",
+    "weekday_cos",
+    "month_sin",
+    "month_cos",
+    "is_weekend",
+    "sun_elevation_deg",
+    "rain_present",
+    "wind_east_kmh",
+    "wind_north_kmh"
+  ],
+  "engineered_categorical_features": [
+    "solar_phase"
+  ],
+  "excluded_predictors": [
+    "collision_index",
+    "collision_ref_no",
+    "collision_severity",
+    "is_severe",
+    "enhanced_severity_collision",
+    "collision_injury_based",
+    "collision_adjusted_severity_serious",
+    "collision_adjusted_severity_slight",
+    "number_of_casualties",
+    "did_police_officer_attend_scene_of_accident",
+    "obs_core_complete",
+    "obs_qc_checked_count",
+    "weather_quality_tier",
+    "weather_provider",
+    "weather_distance_km",
+    "weather_time_offset_minutes",
+    "weather_id"
+  ],
+  "weather": {
+    "maximum_distance_km": 40,
+    "maximum_time_difference_minutes": 60,
+    "require_observed_sources": true,
+    "model_population": "core6_and_all_qc_checkable",
+    "meteostat_observed_sources": [
+      "isd_lite",
+      "metar",
+      "dwd_poi",
+      "dwd_hourly"
+    ],
+    "core_fields": [
+      "temp",
+      "rhum",
+      "prcp",
+      "wdir",
+      "wspd",
+      "pres"
+    ],
+    "bounds": {
+      "temp": {
+        "min": -100,
+        "max": 70,
+        "unit": "degC",
+        "dtype": "float64",
+        "nullable": true
+      },
+      "rhum": {
+        "min": 0,
+        "max": 100,
+        "unit": "percent",
+        "dtype": "float64",
+        "nullable": true
+      },
+      "prcp": {
+        "min": 0,
+        "unit": "mm over one hour",
+        "dtype": "float64",
+        "nullable": true
+      },
+      "wdir": {
+        "min": 0,
+        "max": 360,
+        "unit": "degrees",
+        "dtype": "float64",
+        "nullable": true
+      },
+      "wspd": {
+        "min": 0,
+        "unit": "km/h",
+        "dtype": "float64",
+        "nullable": true
+      },
+      "pres": {
+        "min": 500,
+        "max": 1100,
+        "unit": "hPa, sea level",
+        "dtype": "float64",
+        "nullable": true
+      }
+    },
+    "selection_order": [
+      "more_observed_fields",
+      "more_qc_checkable_fields",
+      "fewer_derived_fields",
+      "shorter_wgs84_distance",
+      "smaller_absolute_time_difference",
+      "earlier_observation_time",
+      "provider",
+      "station_id"
+    ],
+    "future_observations_allowed": true,
+    "interpretation_zh": "按用户要求允许事故前后各1小时的天气，因此是回顾性严重程度研究，不能直接声称可实时预测"
+  },
+  "split": {
+    "method": "chronological_whole_UTC_days",
+    "train_fraction": 0.7,
+    "validation_fraction": 0.15,
+    "test_fraction": 0.15,
+    "purge_minutes_each_side": 60,
+    "random_seed": 42,
+    "fit_preprocessing_on": "train_only"
+  },
+  "astronomy": {
+    "library": "astral",
+    "version": "3.2",
+    "observer_coordinates": "collision latitude/longitude",
+    "civil_depression_deg": 6,
+    "nautical_depression_deg": 12,
+    "astronomical_depression_deg": 18,
+    "not_weather_measurements": true
+  }
 }
