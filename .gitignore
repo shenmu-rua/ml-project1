@@ -6,6 +6,7 @@ venv/
 .ipynb_checkpoints/
 mlruns/
 mlartifacts/
+mlflow.db
 .pytest_cache/
 .ruff_cache/
 .idea/

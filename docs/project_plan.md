@@ -1,6 +1,6 @@
 # 机器学习小组项目：分工与架构方案
 
-> 题目建议：**Telco 客户流失预测**（二分类，表格数据，约 7000 行）。
+> 题目建议：**英国车祸数据分析与预测**
 > 目标：完成"数据 → 分析 → 建模 → 评估 → 上线（Web 端预测）"完整流程，并在 MLOps 上做规范（MLflow、SHAP 等）。
 > 分析部分从简，重点放在工程规范。
 
@@ -46,7 +46,7 @@
 ### 3.1 第 0 天：先开会敲定四份接口契约
 
 1. **特征 schema**：`schema.json`（字段名、类型、取值范围）。A 起草，所有人确认。
-2. **模型产物格式**：用 `mlflow.sklearn` 保存**包含预处理的完整 Pipeline**，通过 `models:/churn-model@production` 加载。D 部署时不依赖 A 的代码细节。
+2. **模型产物格式**：用 `mlflow.sklearn` 保存**包含预处理的完整 Pipeline**，通过 `models:/road-severity-model@production` 加载。D 部署时不依赖 A 的代码细节。
 3. **API 格式**：D 先定好请求/响应 JSON，例如 `POST /predict` → `{"prob": 0.73, "label": 1}`。
 4. **仓库与分支规范**：`main` 受保护，PR 合并需 1 人审核。
 
@@ -81,7 +81,7 @@
                                                         │
                                                         ▼
                                           MLflow Model Registry
-                                   models:/churn-model@production
+                                   models:/road-severity-model@production
                                         │                    │
                                         ▼                    ▼
                           [C] 评估 / SHAP / 漂移      [D] FastAPI 服务

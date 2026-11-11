@@ -1,9 +1,13 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "raw_sha256": {
     "dft-road-casualty-statistics-collision-2024.csv": "32a78f4662e309160f37b1ea2b82017e85e07b62a022d680da7140e88706a17c",
     "dft-road-casualty-statistics-collision-2025.csv": "e699c19bdb82e47e449b6f3381ac87631865f6a31cef118c9955ba80ca870e2b",
-    "weather_2024_2025.csv": "419a3682b6c6f16adb210a3e343da339b3797f74822d1c3339c08ae6159a54bb"
+    "weather_2024_2025.csv": "419a3682b6c6f16adb210a3e343da339b3797f74822d1c3339c08ae6159a54bb",
+    "dft-road-casualty-statistics-vehicle-2024.csv": "1a60f65f07a44454bc03c63b35d6741f41c9dfbb05a26753406aef8bff4ae6cd",
+    "dft-road-casualty-statistics-vehicle-2025.csv": "dbeadb9745a8821ab8132f0dde59c246159e23059ab5db2c9a4381d44141a430",
+    "dft-road-casualty-statistics-casualty-2024.csv": "838aad605a6ac638973f09248ef3a730dbd1de30ac8fc79dfd536e7d4a47b0f8",
+    "dft-road-casualty-statistics-casualty-2025.csv": "b343039991f63f526bbcac0a5e6102e3a6e4c0b65d077e3ae37dbd53d1a7319a"
   },
   "collisions": {
     "raw_rows": 202452,
