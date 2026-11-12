@@ -245,5 +245,6 @@ mlflow ui --backend-store-uri sqlite:///mlflow.db
   最终 run 还记录两条优先级界线、各信息缺失场景的指标（`test_no_*`）和每项验收是否通过（`acceptance_*` 标签）。
 - **Model Registry**：`road-severity-model` 版本 1–5 对应上表五个版本，`production` 别名指向版本 5。
 - **接口变化（需告知 C、D）**：注册的模型是 `src.triage.TriageClassifier`。`predict` 返回 1/2/3 而不是 0/1；内部管线在 `model.pipeline`。
+- **原始数据**：全部在 `data/raw/`，入库且按原样检出（`.gitattributes`），文件哈希记录在 `data/quality_report.json`。
 - **不入库的产物**：`mlflow.db`、`mlruns/` 和 `data/road_collisions.sqlite` 已在 `.gitignore` 中，按上面的命令可重新生成。
 - **已知限制**：逻辑回归调参是单线程的，在当前数据规模下 20 个 trial 约需 35 分钟，且对结果几乎没有影响。

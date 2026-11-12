@@ -10,8 +10,8 @@
 
 | 项目 | 说明 |
 |---|---|
-| 任务类型 | 二分类（客户是否流失） |
-| 数据集 | Kaggle: Telco Customer Churn（可替换，只要是 10~20 个字段的表格数据，分工不变） |
+| 任务类型 | 事故严重程度预测（致死或重伤 / 轻伤），输出三级急救派单优先级 |
+| 数据集 | 英国 DfT Road Safety Open Data 2024–2025（事故表、车辆表、伤亡表）+ 逐小时天气观测 |
 | 核心技术栈 | pandas / scikit-learn / XGBoost / LightGBM / Optuna / MLflow / SHAP / Evidently / FastAPI / Streamlit / Docker / GitHub Actions / DVC / pytest |
 | 最终成果 | 可运行的 Web 预测系统 + MLflow 实验记录 + 模型解释 + 报告 + 答辩 |
 
@@ -25,7 +25,7 @@
 
 | 成员 | 模块 | 核心任务 | 交付物 |
 |---|---|---|---|
-| **A：数据** | 数据与特征 | 数据获取与清洗；简单 EDA（5~8 张图）；特征工程；sklearn `Pipeline/ColumnTransformer`；数据校验（pandera）；DVC 数据版本管理；固定 train/val/test 划分 | `data/`、`src/features.py`、`eda.ipynb`、`schema.json` |
+| **A：数据** | 数据与特征 | 数据获取与清洗；简单 EDA（5~8 张图）；特征工程；sklearn `Pipeline/ColumnTransformer`；数据校验（pandera）；DVC 数据版本管理；固定 train/val/test 划分 | `data/`、`src/features.py`、`notebooks/eda.ipynb`、`schema.json` |
 | **B：建模** | 训练与实验追踪 | LR / RF / XGBoost / LightGBM 基线；Optuna 调参；**MLflow 实验追踪**（参数、指标、产物）；**Model Registry** 注册并设置 `production` 别名 | `src/train.py`、MLflow 实验记录、注册模型 |
 | **C：评估** | 评估与解释 | AUC / PR / F1 / 校准曲线；交叉验证；阈值选择；错误分析与分群表现；**SHAP** 全局 + 单样本解释；Evidently 漂移检测；Model Card | `src/evaluate.py`、`src/explain.py`、评估报告、Model Card |
 | **D：上线** | 部署与工程化 | **FastAPI** 预测接口；Web 前端（Streamlit 或 HTML 表单，含 SHAP 单样本瀑布图）；Docker + docker-compose（API + MLflow）；GitHub Actions CI（lint + pytest）；请求日志 | `app/`、`Dockerfile`、`docker-compose.yml`、`.github/workflows/`、`README.md` |
@@ -90,22 +90,39 @@
                                                   Web 前端（填表 → 预测 + SHAP）
 ```
 
-### 推荐仓库结构
+### 仓库结构
 
 ```
-churn-mlops/
-├── data/                       # A（DVC 管理）
+ml-project1/
+├── data/
+│   ├── raw/                    # A：原始 CSV（事故、车辆、伤亡、天气），入库且只读
+│   ├── *_report.json           # A：质量、切分、预处理三份报告（DVC 指标）
+│   └── processed/ splits/ eda_figures/ road_collisions.sqlite   # 管线生成，不入库
+├── notebooks/
+│   └── eda.ipynb               # A
 ├── src/
-│   ├── features.py             # A
-│   ├── train.py                # B
+│   ├── data_pipeline.py        # A：清洗、天气匹配、时间切分
+│   ├── astronomy.py            # A：日照特征
+│   ├── validation.py           # A：pandera 校验
+│   ├── features.py             # A：特征契约与预处理 Pipeline
+│   ├── eda.py                  # A：EDA 图表
+│   ├── data_report.py          # A：数据分析报告（docx）
+│   ├── manage_data.py          # A：DVC 入口
+│   ├── participants.py         # B：车辆表、伤亡表聚合为事故级特征
+│   ├── database.py             # B：CSV 合并为 SQLite，读取切分与结果标签
+│   ├── train.py                # B：训练、调参、MLflow 追踪与注册
+│   ├── triage.py               # B：三级派单优先级与验收
 │   ├── evaluate.py             # C
 │   └── explain.py              # C
 ├── app/                        # D（FastAPI + 前端）
 ├── tests/                      # 每人写自己的
-├── docs/                       # 报告章节，每人一份
-├── docker-compose.yml          # D（API + MLflow）
-├── requirements.txt
-└── .github/workflows/ci.yml    # D
+├── docs/                       # 分工方案与四份报告章节
+├── artifacts/                  # 生成的 docx 报告
+├── schema.json                 # 特征、切分与派单分级的共同契约
+├── dvc.yaml / dvc.lock         # 数据管线
+├── requirements.txt            # 全部依赖（固定版本）
+├── docker-compose.yml          # D（API + MLflow，待建）
+└── .github/workflows/ci.yml    # D（待建）
 ```
 
 ---

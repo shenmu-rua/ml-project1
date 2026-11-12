@@ -1,14 +1,14 @@
 # ML-project1：英国车祸数据分析与预测
 
 四人小组机器学习项目：数据 → 分析 → 建模 → 评估 → 上线（Web 预测）。
-完整分工与架构见 [docs/project_plan.md](docs/project_plan.md)。
+完整分工、架构与仓库结构见 [docs/project_plan.md](docs/project_plan.md)。
 
 ## 模块与负责人
 
 | 成员 | 模块 | 目录 / 文件 |
 |---|---|---|
-| A | 数据与特征 | `data/`, `src/features.py`, `notebooks/eda.ipynb`, `schema.json` |
-| B | 训练与实验追踪 | `src/train.py` |
+| A | 数据与特征 | `data/`, `src/data_pipeline.py`, `src/features.py`, `notebooks/eda.ipynb`, `schema.json` |
+| B | 训练与实验追踪 | `src/train.py`, `src/triage.py`, `src/database.py`, `src/participants.py` |
 | C | 评估与解释 | `src/evaluate.py`, `src/explain.py` |
 | D | 部署与工程化 | `app/`, `Dockerfile`, `docker-compose.yml`, `.github/workflows/` |
 
@@ -30,7 +30,7 @@ python -m src.train               # B：基线 + Optuna 调参 + MLflow 追踪�
 mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 
-原始数据在 `data/`：事故表、车辆表、伤亡表（DfT Road Safety Open Data，2024–2025，
+原始数据在 `data/raw/`：事故表、车辆表、伤亡表（DfT Road Safety Open Data，2024–2025，
 `https://data.dft.gov.uk/road-accidents-safety-data/`）与天气观测表。车辆表和伤亡表由
 `src/participants.py` 按 `schema.json` 的 `participants` 定义聚合到事故级；伤情结论字段不进入模型。
 

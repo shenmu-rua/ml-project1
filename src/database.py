@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.data_pipeline import weather_path
 from src.features import (
     CATEGORICAL_INPUTS,
     INPUT_COLUMNS,
@@ -62,11 +63,8 @@ def build_database(data_dir=None, db_path=None):
     data_dir = Path(data_dir) if data_dir is not None else ROOT / "data"
     db_path = Path(db_path) if db_path is not None else data_dir / DB_PATH.name
     sources = {
-        "collisions_raw": [
-            (data_dir / f"dft-road-casualty-statistics-collision-{year}.csv", None)
-            for year in (2024, 2025)
-        ],
-        "weather_raw": [(data_dir / "weather_2024_2025.csv", None)],
+        "collisions_raw": [(p, None) for p in table_paths(data_dir, "collision")],
+        "weather_raw": [(weather_path(data_dir), None)],
         "vehicles_raw": [(p, None) for p in table_paths(data_dir, "vehicle")],
         "casualties_raw": [(p, None) for p in table_paths(data_dir, "casualty")],
         "collisions_clean": [(data_dir / "processed/collisions_clean.csv", None)],

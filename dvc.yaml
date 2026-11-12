@@ -2,13 +2,13 @@ stages:
   prepare:
     cmd: python -m src.data_pipeline prepare
     deps:
-      - data/dft-road-casualty-statistics-collision-2024.csv
-      - data/dft-road-casualty-statistics-collision-2025.csv
-      - data/weather_2024_2025.csv
-      - data/dft-road-casualty-statistics-vehicle-2024.csv
-      - data/dft-road-casualty-statistics-vehicle-2025.csv
-      - data/dft-road-casualty-statistics-casualty-2024.csv
-      - data/dft-road-casualty-statistics-casualty-2025.csv
+      - data/raw/dft-road-casualty-statistics-collision-2024.csv
+      - data/raw/dft-road-casualty-statistics-collision-2025.csv
+      - data/raw/weather_2024_2025.csv
+      - data/raw/dft-road-casualty-statistics-vehicle-2024.csv
+      - data/raw/dft-road-casualty-statistics-vehicle-2025.csv
+      - data/raw/dft-road-casualty-statistics-casualty-2024.csv
+      - data/raw/dft-road-casualty-statistics-casualty-2025.csv
       - schema.json
       - src/data_pipeline.py
       - src/validation.py
@@ -46,13 +46,13 @@ stages:
   database:
     cmd: python -m src.database
     deps:
-      - data/dft-road-casualty-statistics-collision-2024.csv
-      - data/dft-road-casualty-statistics-collision-2025.csv
-      - data/weather_2024_2025.csv
-      - data/dft-road-casualty-statistics-vehicle-2024.csv
-      - data/dft-road-casualty-statistics-vehicle-2025.csv
-      - data/dft-road-casualty-statistics-casualty-2024.csv
-      - data/dft-road-casualty-statistics-casualty-2025.csv
+      - data/raw/dft-road-casualty-statistics-collision-2024.csv
+      - data/raw/dft-road-casualty-statistics-collision-2025.csv
+      - data/raw/weather_2024_2025.csv
+      - data/raw/dft-road-casualty-statistics-vehicle-2024.csv
+      - data/raw/dft-road-casualty-statistics-vehicle-2025.csv
+      - data/raw/dft-road-casualty-statistics-casualty-2024.csv
+      - data/raw/dft-road-casualty-statistics-casualty-2025.csv
       - data/processed/collisions_clean.csv
       - data/splits/train.csv
       - data/splits/val.csv

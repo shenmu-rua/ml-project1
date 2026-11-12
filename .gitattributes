@@ -1,0 +1,2 @@
+# Raw data must be byte-identical on every machine: the pipeline and DVC hash it.
+data/raw/*.csv -text
