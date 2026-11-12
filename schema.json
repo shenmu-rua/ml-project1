@@ -365,6 +365,40 @@
     "future_observations_allowed": true,
     "interpretation_zh": "按用户要求允许事故前后各1小时的天气，因此是回顾性严重程度研究，不能直接声称可实时预测"
   },
+  "triage": {
+    "purpose_zh": "辅助急救调度按轻重缓急派出力量：输出三级优先级，而不是严重/不严重的二分结论",
+    "priorities": {
+      "1": "立即：得分最高的一部分事故",
+      "2": "紧急：两条界线之间",
+      "3": "常规：得分很低，极少有危及生命的事故"
+    },
+    "grade_source": "enhanced_severity_collision",
+    "grades": {
+      "3": 0,
+      "7": 1,
+      "6": 2,
+      "5": 3,
+      "1": 4
+    },
+    "grade_labels_zh": {
+      "0": "轻伤",
+      "1": "较轻重伤",
+      "2": "中度重伤",
+      "3": "极重伤",
+      "4": "致死"
+    },
+    "life_threatening_min_grade": 3,
+    "immediate_share": 0.15,
+    "validation_undertriage": 0.04,
+    "acceptance": {
+      "evaluated_on": "test",
+      "max_undertriage_life": 0.05,
+      "max_undertriage_fatal": 0.01,
+      "min_routine_share": 0.2,
+      "min_immediate_life_lift": 3.0,
+      "basis_zh": "漏判率不超过5%取自创伤分诊通用标准；其余三项为本项目自定的最低要求"
+    }
+  },
   "split": {
     "method": "chronological_whole_UTC_days",
     "train_fraction": 0.7,

@@ -143,6 +143,25 @@ def load_splits(db_path=None):
     return output
 
 
+def load_outcomes(db_path=None):
+    """DfT severity codes per split, row-aligned with ``load_splits``; never inputs.
+
+    ``collision_severity`` is 1 fatal, 2 serious, 3 slight. Forces with injury-based
+    records also grade it in ``enhanced_severity_collision`` (-1 elsewhere).
+    """
+    path = Path(db_path) if db_path is not None else DB_PATH
+    query = (
+        "SELECT r.collision_severity, r.enhanced_severity_collision "
+        "FROM model_data m JOIN collisions_raw r USING (collision_index) "
+        "WHERE m.split = ? ORDER BY m.collision_datetime_utc, m.collision_index"
+    )
+    with closing(sqlite3.connect(path)) as connection:
+        return {
+            name: pd.read_sql_query(query, connection, params=(name,)).astype(int)
+            for name in SPLITS
+        }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")

@@ -34,8 +34,10 @@ mlflow ui --backend-store-uri sqlite:///mlflow.db
 `https://data.dft.gov.uk/road-accidents-safety-data/`）与天气观测表。车辆表和伤亡表由
 `src/participants.py` 按 `schema.json` 的 `participants` 定义聚合到事故级；伤情结论字段不进入模型。
 
-训练产物为包含预处理的完整 Pipeline，通过 `models:/road-severity-model@production` 加载
-（需在仓库根目录运行，使 `src.features` 可被导入）。
+训练产物通过 `models:/road-severity-model@production` 加载（需在仓库根目录运行，使 `src` 可被导入）。
+它用于辅助急救调度分级派单：`predict` 返回优先级（1 立即、2 紧急、3 常规），`predict_proba` 返回严重程度概率，
+`model.pipeline` 是包含预处理的完整 Pipeline。分级界线与验收标准见 `schema.json` 的 `triage` 段和
+[docs/report_B_modeling.md](docs/report_B_modeling.md)。
 
 ## 协作规范
 
