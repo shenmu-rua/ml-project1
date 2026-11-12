@@ -1,20 +1,39 @@
--r requirements-data.txt
-pandas
-numpy
-scikit-learn
-xgboost
-lightgbm
-optuna
-mlflow
-shap
-evidently
-pandera
-dvc
-fastapi
-uvicorn[standard]
-streamlit
-httpx
-pytest
-ruff
-matplotlib
-seaborn
+# Tested on Python 3.12. Install with: uv pip install -r requirements.txt
+
+# A: data, features, validation, EDA and the data report
+numpy==2.3.5
+pandas==3.0.1
+scikit-learn==1.9.1
+pandera[pandas]==0.34.1
+astral==3.2
+geographiclib==2.1
+tzdata==2026.6
+matplotlib==3.11.2
+seaborn==0.13.2
+joblib==1.6.0
+dvc==3.67.1
+nbformat==5.11.1
+nbclient==0.11.0
+ipykernel==7.4.0
+python-docx==1.2.0
+
+# B: training and experiment tracking
+xgboost==3.4.1
+lightgbm==4.7.0
+optuna==5.0.0
+mlflow==3.18.0
+skops==0.16.0
+
+# C: evaluation and explanation
+shap==0.54.1
+evidently==0.7.23
+
+# D: API and front end
+fastapi==0.162.2
+uvicorn[standard]==0.54.0
+streamlit==1.67.0
+httpx==0.28.1
+
+# Shared tooling
+pytest==9.2.0
+ruff==0.17.4

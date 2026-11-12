@@ -15,6 +15,8 @@ import pandas as pd
 
 STATISTICS = ("min", "max", "mean")
 YEARS = (2024, 2025)
+# Untouched source CSVs live here, apart from everything the pipeline generates.
+RAW_DIR = "raw"
 
 
 def feature_names(contract, table=None):
@@ -74,8 +76,9 @@ def read_table(data_dir, table):
 
 
 def table_paths(data_dir, table):
+    """Yearly raw DfT files of one table: collision, vehicle or casualty."""
     return [
-        Path(data_dir) / f"dft-road-casualty-statistics-{table}-{year}.csv"
+        Path(data_dir) / RAW_DIR / f"dft-road-casualty-statistics-{table}-{year}.csv"
         for year in YEARS
     ]
 

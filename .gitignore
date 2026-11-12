@@ -11,9 +11,9 @@ mlflow.db
 .ruff_cache/
 .idea/
 .vscode/
-# DVC 管理数据，不直接入 git
-/data/raw/*.csv
-/data/processed/*.csv
-/data/processed/*.parquet
+# 管线生成的数据由 data/.gitignore 忽略（DVC 维护）；data/raw/ 的原始 CSV 入库
+# 本地工具与临时目录
 .audit/
+.claude/
+.spec-workflow/
 artifacts/.render/

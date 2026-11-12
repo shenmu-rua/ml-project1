@@ -31,7 +31,7 @@
 
 matplotlib 和 Jupyter 生成图表与 notebook；DVC 3.67.1 和 Git 管理数据产物与代码版本，pytest 覆盖核心函数。
 
-项目依赖版本固定在 requirements-data.txt，其中记录的运行环境为 Python 3.12.14、pandas 3.0.1 和 NumPy 2.3.5。
+项目依赖版本固定在 requirements.txt，其中记录的运行环境为 Python 3.12.14、pandas 3.0.1 和 NumPy 2.3.5。
 
 <!-- pagebreak -->
 

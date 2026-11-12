@@ -1,7 +1,7 @@
 """Reproducible Python ingestion, observed-weather linkage and temporal splits.
 
 Run from the repository root: ``python -m src.data_pipeline all``.
-Raw CSVs are read-only; all generated data go into processed/ and splits/.
+Raw CSVs in data/raw/ are read-only; all generated data go into processed/ and splits/.
 """
 
 import argparse
@@ -14,7 +14,7 @@ import pandas as pd
 from geographiclib.geodesic import Geodesic
 
 from src.astronomy import add_astronomy
-from src.participants import feature_names, read_participants, table_paths
+from src.participants import RAW_DIR, feature_names, read_participants, table_paths
 from src.validation import load_schema, validate_frame
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,15 +53,15 @@ def valid_range(values, definition):
     return good
 
 
+def weather_path(data_dir):
+    return Path(data_dir) / RAW_DIR / "weather_2024_2025.csv"
+
+
 def read_collisions(data_dir, contract):
     source = pd.concat(
         [
-            pd.read_csv(
-                data_dir / f"dft-road-casualty-statistics-collision-{year}.csv",
-                dtype=str,
-                keep_default_na=False,
-            )
-            for year in (2024, 2025)
+            pd.read_csv(path, dtype=str, keep_default_na=False)
+            for path in table_paths(data_dir, "collision")
         ],
         ignore_index=True,
     )
@@ -429,10 +429,7 @@ def prepare(data_dir=ROOT / "data"):
     contract = load_schema()
     processed = data_dir / "processed"
     processed.mkdir(parents=True, exist_ok=True)
-    paths = [
-        data_dir / f"dft-road-casualty-statistics-collision-{y}.csv"
-        for y in (2024, 2025)
-    ] + [data_dir / "weather_2024_2025.csv"]
+    paths = table_paths(data_dir, "collision") + [weather_path(data_dir)]
     participant_paths = [
         path
         for table in contract["participants"]
