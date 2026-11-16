@@ -1,0 +1,45 @@
+# D 负责：编排 API + 前端 + MLflow 三服务。
+# 启动：docker compose up --build
+#   API      http://localhost:8000/docs
+#   前端      http://localhost:8501
+#   MLflow   http://localhost:5000
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ml-project1-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./request_log.jsonl:/app/request_log.jsonl
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ml-project1-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      # 容器内通过服务名访问 API
+      - API_URL=http://api:8000/predict
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.20.0
+    container_name: ml-project1-mlflow
+    ports:
+      - "5000:5000"
+    command: mlflow server --host 0.0.0.0 --backend-store-uri sqlite:///mlflow.db --default-artifact-root /mlflow-artifacts
+    volumes:
+      - mlflow-artifacts:/mlflow-artifacts
+    restart: unless-stopped
+
+volumes:
+  mlflow-artifacts:

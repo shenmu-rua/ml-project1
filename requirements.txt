@@ -31,8 +31,10 @@ evidently==0.7.23
 # D: API and front end
 fastapi==0.162.2
 uvicorn[standard]==0.54.0
+pydantic==2.12.0
 streamlit==1.67.0
 httpx==0.28.1
+requests==2.32.3
 
 # Shared tooling
 pytest==9.2.0
