@@ -1,0 +1,86 @@
+# D 负责：编排 API + 前端 + MLflow 三服务。
+# 启动：docker compose up --build
+#   API      http://localhost:8000/docs
+#   前端      http://localhost:8501
+#   MLflow   http://localhost:5000
+#
+# 默认 MODEL_URI 为空，API 使用占位模型。接入真实模型：
+#   1. MLFLOW_TRACKING_URI=http://localhost:5000 python -m src.train   （把模型注册到本编排的 MLflow）
+#   2. MODEL_URI=models:/road-severity-model@production docker compose up -d api
+# API 与 MLflow 用同一份 Dockerfile 构建（第二次构建直接命中缓存），
+# 保证 MLflow 服务端与训练、推理用的客户端同为 requirements.txt 固定的版本。
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+
+services:
+  api:
+    build: *app-build
+    container_name: ml-project1-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_URI=${MODEL_URI:-}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - REQUEST_LOG_PATH=/app/logs/request_log.jsonl
+    volumes:
+      # 挂载目录而不是单个文件：文件不存在时 Docker 会把挂载点建成目录。
+      - ./logs:/app/logs
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ml-project1-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      # 容器内通过服务名访问 API
+      - API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  mlflow:
+    build: *app-build
+    container_name: ml-project1-mlflow
+    ports:
+      - "5000:5000"
+    # 实验记录、模型注册表与模型文件都放在具名卷里，重建容器不丢失；
+    # 模型文件经服务端代理上传下载，宿主机训练与容器内推理都只需要这个 HTTP 地址。
+    # --allowed-hosts：MLflow 默认只接受 localhost 与内网 IP 的 Host 头，容器间用服务名访问需要放行。
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
+      --serve-artifacts
+      --allowed-hosts "mlflow:5000,localhost:*,127.0.0.1:*"
+    volumes:
+      - mlflow-data:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:
