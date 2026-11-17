@@ -2,7 +2,11 @@
 
 from fastapi import FastAPI
 
+from app.api.endpoints import register_error_handlers, router
+
 app = FastAPI(title="Road Collision Severity Triage API")
+register_error_handlers(app)
+app.include_router(router)
 
 
 @app.get("/health")
