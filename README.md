@@ -23,6 +23,9 @@ pytest
 
 ## 数据与训练
 
+数据集不随 Git 仓库分发。运行管线前，请在 `data/raw/` 放置 2024、2025 年的事故、车辆、伤亡三类 CSV，
+以及 `weather_2024_2025.csv` 天气观测表。该目录已由 `.gitignore` 忽略，本地文件会保留。
+
 ```bash
 python -m src.data_pipeline all   # A：清洗、天气匹配、时间切分（或 dvc repro）
 python -m src.database            # 合并全部 CSV 为 data/road_collisions.sqlite

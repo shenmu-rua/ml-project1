@@ -95,7 +95,7 @@
 ```
 ml-project1/
 ├── data/
-│   ├── raw/                    # A：原始 CSV（事故、车辆、伤亡、天气），入库且只读
+│   ├── raw/                    # A：原始 CSV（事故、车辆、伤亡、天气），本地只读，Git 忽略
 │   ├── *_report.json           # A：质量、切分、预处理三份报告（DVC 指标）
 │   └── processed/ splits/ eda_figures/ road_collisions.sqlite   # 管线生成，不入库
 ├── notebooks/

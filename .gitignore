@@ -13,7 +13,8 @@ mlflow.db
 .vscode/
 # D 的请求日志(运行时生成,不入库)
 logs/
-# 管线生成的数据由 data/.gitignore 忽略（DVC 维护）；data/raw/ 的原始 CSV 入库
+# 数据集仅保留在本地；管线产物由 data/.gitignore 忽略（DVC 维护）
+/data/raw/
 # 本地工具与临时目录
 .audit/
 .spec-workflow/
