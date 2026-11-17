@@ -1,125 +1,189 @@
-"""D 负责:模型加载与统一推理接口。
+"""D 负责:模型加载与统一推理入口。
 
-设计原则
-========
-* API 只依赖本模块暴露的 ``ModelService``,不直接 import MLflow 或 sklearn 模型,
-  从而把"模型从哪来"与"接口怎么服务"解耦。
-* 当前用 **Dummy 模型**跑通(project_plan 第 55 行:D 第 1 周先用假模型,
-  之后只替换模型)。接口签名对齐团队真实模型 ``src.triage.TriageClassifier``:
-      - ``predict_proba`` 返回严重度(正类)概率
-      - ``predict`` 返回分诊优先级 1 / 2 / 3
-* 接入真实模型时,只需把 :func:`load_model` 里 TODO 处换成
-  ``mlflow.sklearn.load_model("models:/road-severity-model@production")``,
-  其余代码(路由、契约、前端)零改动。
-
-风险指标取值
-============
-验收指标现在用 project 固定的验收数字(与 schema.json 一致)写死为占位;
-后续由 C 的评估流水线产出真实数值后再替换为从 MLflow/评估文件读取。
+* API 只通过 :class:`ModelService` 使用模型。它委托给一个与
+  ``src.triage.TriageClassifier`` 同接口的对象:``predict_proba(X)`` 返回
+  ``(n, 2)`` 概率,``cutoffs`` 是(常规/紧急, 紧急/立即)两条界线。
+* 环境变量 ``MODEL_URI`` 指向 MLflow 模型(``models:/road-severity-model@production``)
+  时加载真实模型,验收指标取自该模型版本对应的 final run;加载失败直接报错,
+  不会悄悄退回占位模型。
+* ``MODEL_URI`` 未设置时使用 :class:`DummyTriageModel` 跑通联调,并明确标记为
+  占位、未评估。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+import os
+import re
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 import numpy as np
+import pandas as pd
 
-__all__ = ["DUMMY_RISK_METRICS", "ModelService", "load_model"]
+from app.schemas import Cutoffs, RiskMetrics
+from src.features import (
+    CATEGORICAL_INPUTS,
+    INFO_GROUPS,
+    NUMERIC_INPUTS,
+    SCHEMA,
+    complete_inputs,
+)
+from src.participants import aggregate
+from src.triage import acceptance, priorities
 
-# 占位验收指标(对齐 schema.json triage.acceptance,演示用;真实值待 C 评估后替换)
-DUMMY_RISK_METRICS = {
-    "undertriage_life": 0.038,     # 危及生命漏判率 3.8% <= 5%
-    "undertriage_fatal": 0.003,    # 致死漏判率 0.3% <= 1%
-    "routine_share": 0.258,        # 常规级占比 25.8% >= 20%
-    "immediate_lift": 3.5,         # 立即级提纯 3.5 倍 >= 3
-    "status": "pass",
-}
+__all__ = ["DummyTriageModel", "ModelService", "build_frame", "load_model"]
 
-# 固定切点(演示用):严重度概率 >=0.7 立即,>=0.4 紧急,否则常规。
-# 真实模型的三级由 src.triage.TriageClassifier 在验证集上确定 — 见 train.py。
-IMMEDIATE_CUTOFF = 0.70
-URGENT_CUTOFF = 0.40
+_logger = logging.getLogger("app.model")
+
+DATETIME_COLUMN = SCHEMA["datetime_column"]
+PARTICIPANT_FIELDS = {"vehicle": "vehicles", "casualty": "casualties"}
+# DfT 原始表用 -1 表示"未知";现场没填的编码按同样方式计数,与训练数据一致。
+UNKNOWN_CODE = "-1"
+NOT_EVALUATED = RiskMetrics(
+    undertriage_life=None,
+    undertriage_fatal=None,
+    routine_share=None,
+    immediate_lift=None,
+    status="not_evaluated",
+)
+_REGISTRY_URI = re.compile(
+    r"^models:/(?P<name>[^/@]+)(?:@(?P<alias>[^/]+)|/(?P<version>\d+))$"
+)
 
 
-@dataclass
+def _aggregate(table: str, records: list) -> pd.DataFrame:
+    counted = list(SCHEMA["participants"][table]["counts"])
+    rows = pd.DataFrame([record.model_dump() for record in records])
+    rows[counted] = rows[counted].astype(object).fillna(UNKNOWN_CODE)
+    rows["collision_index"] = "request"
+    return aggregate(rows, table, SCHEMA).reset_index(drop=True)
+
+
+def build_frame(request) -> pd.DataFrame:
+    """One model input row from a validated request, in the training column order."""
+    collision = request.model_dump(exclude=set(PARTICIPANT_FIELDS.values()))
+    parts = [pd.DataFrame([collision])]
+    for table, attribute in PARTICIPANT_FIELDS.items():
+        records = getattr(request, attribute)
+        if records:
+            parts.append(_aggregate(table, records))
+    frame = complete_inputs(pd.concat(parts, axis=1))
+    frame[DATETIME_COLUMN] = pd.to_datetime(frame[DATETIME_COLUMN], utc=True)
+    frame[NUMERIC_INPUTS] = frame[NUMERIC_INPUTS].astype(float)
+    frame[CATEGORICAL_INPUTS] = frame[CATEGORICAL_INPUTS].astype(object)
+    return frame
+
+
+def missing_info(frame: pd.DataFrame) -> list[str]:
+    """Information groups (see ``src.features.INFO_GROUPS``) with no value at all."""
+    return [
+        group
+        for group, columns in INFO_GROUPS.items()
+        if frame[columns].isna().all(axis=None)
+    ]
+
+
+class DummyTriageModel:
+    """启发式占位模型,接口与 ``src.triage.TriageClassifier`` 相同。
+
+    得分随危险信号(高限速、多车、低温、大风、湿滑路面)升高,只用于在真实
+    模型就绪前跑通 API、前端与容器,没有任何预测效力。
+    """
+
+    cutoffs = (0.40, 0.70)
+    _HAZARDOUS_SURFACES = ("2", "3", "4", "5", "6", "7")
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        speed_limit = X["speed_limit"].fillna(30.0).clip(upper=70.0)
+        vehicles = X["number_of_vehicles"].fillna(1.0).clip(upper=8.0)
+        cold = (12.0 - X["temp"].fillna(12.0)).clip(lower=0.0)
+        wind = X["wspd"].fillna(10.0).clip(upper=40.0)
+        hazardous = X["road_surface_conditions"].isin(self._HAZARDOUS_SURFACES)
+        score = (
+            0.10
+            + speed_limit / 70.0 * 0.35
+            + vehicles / 8.0 * 0.20
+            + cold / 40.0 * 0.10
+            + wind / 40.0 * 0.10
+            + hazardous * 0.15
+        )
+        positive = score.clip(0.0, 1.0).to_numpy(dtype=float)
+        return np.column_stack([1.0 - positive, positive])
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        return priorities(self.predict_proba(X)[:, 1], self.cutoffs)
+
+
+@dataclass(frozen=True)
 class ModelService:
-    """统一的推理入口:输入一行特征 dict,输出严重度概率与三级优先级。"""
+    """统一的推理入口:一行模型输入 → 严重度概率与派单优先级。"""
 
-    model: object
-    model_version: str = "dummy-v1"
+    model: Any
+    model_version: str
+    risk_metrics: RiskMetrics = field(default_factory=lambda: NOT_EVALUATED)
+    is_placeholder: bool = False
+    loaded_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
-    def _severity_probability(self, features: dict) -> float:
-        """Dummy 启发式:用数值特征拼一个 0~1 的严重度得分。
+    @property
+    def cutoffs(self) -> Cutoffs:
+        low, high = self.model.cutoffs
+        return Cutoffs(routine_urgent=low, urgent_immediate=high)
 
-        关键设计:得分会随传入的危险信号(高速、多车、低温、恶劣路面)升高,
-        从而让"危及生命"的输入稳定落到高优先级,守住安全底线测试。
-        """
-        def num(key: str, default: float) -> float:
-            value = features.get(key)
-            try:
-                return float(value) if value is not None else default
-            except (TypeError, ValueError):
-                return default
-
-        speed_limit = num("speed_limit", 30.0)
-        vehicles = num("number_of_vehicles", 1.0)
-        temp = num("temp", 12.0)
-        wspd = num("wspd", 10.0)
-
-        score = 0.0
-        score += min(speed_limit, 70.0) / 70.0 * 0.35        # 限速越高越危险
-        score += min(vehicles, 8.0) / 8.0 * 0.20             # 车越多越危险
-        score += max(0.0, (12.0 - temp)) / 40.0 * 0.10       # 低温路面风险
-        score += min(wspd, 40.0) / 40.0 * 0.10               # 大风
-        # 类别危险信号
-        if str(features.get("road_surface_conditions", "")) in ("2", "3", "4", "5", "6", "7"):
-            score += 0.15                                     # 湿滑/冰雪/油渍
-        score += 0.10                                         # 基础风险
-
-        return float(np.clip(score, 0.0, 1.0))
-
-    def predict_proba(self, features: dict) -> float:
-        """严重度(正类)概率。接真实模型时改为 model.predict_proba(X)[:, 1]。"""
-        return self._severity_probability(features)
-
-    def predict(self, features: dict) -> int:
-        """分诊优先级 1(立即)/2(紧急)/3(常规)。"""
-        probability = self.predict_proba(features)
-        if probability >= IMMEDIATE_CUTOFF:
-            return 1
-        if probability >= URGENT_CUTOFF:
-            return 2
-        return 3
-
-    def predict_with_probs(self, features: dict) -> tuple[int, float, dict[str, float]]:
-        """一次调用返回 (priority, 严重度概率, 三级归一化概率)。
-
-        ``probabilities`` 用于前端展示各等级的置信度:
-        按"离两个切点多近"构造三级相对权重,保证 argmax(probabilities)
-        与 ``priority`` 一致,避免前端置信度与等级自相矛盾。
-        """
-        probability = self.predict_proba(features)
-        priority = self.predict(features)
-
-        # 三级权重:等级 i 的权重 = 概率落入该区间中心的贴近度(高斯核)
-        centers = {1: 0.85, 2: 0.55, 3: 0.20}
-        weights = {
-            level: float(np.exp(-((probability - center) ** 2) / 0.01))
-            for level, center in centers.items()
-        }
-        total = sum(weights.values()) + 1e-9
-        probabilities = {
-            "level_1": round(weights[1] / total, 4),
-            "level_2": round(weights[2] / total, 4),
-            "level_3": round(weights[3] / total, 4),
-        }
-        return priority, round(probability, 4), probabilities
+    def predict(self, frame: pd.DataFrame) -> tuple[int, float]:
+        """(priority, 严重度概率);优先级与 ``TriageClassifier.predict`` 同一算法。"""
+        probability = float(self.model.predict_proba(frame)[0, 1])
+        if not np.isfinite(probability):
+            # 不能让算不出的概率在界线比较中落成"常规"。
+            raise ValueError("模型返回了非有限的概率,拒绝给出分级")
+        priority = priorities(np.array([probability]), self.model.cutoffs)[0]
+        return int(priority), probability
 
 
-def load_model() -> ModelService:
-    """加载模型(当前为 Dummy;接真实模型时替换此函数体)。"""
-    # TODO(D): 接入 B 的 MLflow 真实模型后使用:
-    #   import mlflow
-    #   model = mlflow.sklearn.load_model("models:/road-severity-model@production")
-    #   return ModelService(model=model, model_version="production")
-    return ModelService(model=None, model_version="dummy-v1")
+def _risk_metrics(metrics: dict[str, float]) -> RiskMetrics:
+    try:
+        checks = acceptance(metrics)
+    except KeyError:
+        return NOT_EVALUATED
+    return RiskMetrics(
+        undertriage_life=metrics["test_undertriage_life"],
+        undertriage_fatal=metrics["test_undertriage_fatal"],
+        routine_share=metrics["test_p3_share"],
+        immediate_lift=metrics["test_p1_life_lift"],
+        status="pass" if all(checks.values()) else "fail",
+    )
+
+
+def _registry_details(uri: str) -> tuple[str, RiskMetrics]:
+    """Version label and test metrics of a registered model version's final run."""
+    import mlflow
+
+    match = _REGISTRY_URI.match(uri)
+    if match is None:
+        return uri, NOT_EVALUATED
+    client, name = mlflow.MlflowClient(), match["name"]
+    if match["alias"]:
+        entry = client.get_model_version_by_alias(name, match["alias"])
+    else:
+        entry = client.get_model_version(name, match["version"])
+    metrics = client.get_run(entry.run_id).data.metrics if entry.run_id else {}
+    return f"{name} v{entry.version}", _risk_metrics(metrics)
+
+
+def load_model(uri: str | None = None) -> ModelService:
+    """Load the model named by ``uri`` (default: ``MODEL_URI``), else the placeholder."""
+    uri = os.getenv("MODEL_URI", "") if uri is None else uri
+    if not uri:
+        _logger.warning(
+            "MODEL_URI 未设置:使用占位模型 dummy-v1,分级结果不可用于实际派单"
+        )
+        return ModelService(DummyTriageModel(), "dummy-v1", is_placeholder=True)
+
+    import mlflow
+
+    # 需在仓库根目录运行:反序列化 TriageClassifier 要能导入 src 包。
+    model = mlflow.sklearn.load_model(uri)
+    version, risk_metrics = _registry_details(uri)
+    _logger.info("已加载模型 %s (%s),验收状态 %s", version, uri, risk_metrics.status)
+    return ModelService(model, version, risk_metrics)

@@ -1,9 +1,10 @@
 """D 负责:FastAPI 预测服务。
 
-* 先用 Dummy 模型跑通(project_plan 第 55 行),接真实模型只改 :func:`app.model_loader.load_model`。
-* ``POST /predict``  输入一次事故特征,输出分诊优先级 1/2/3 与各等级概率。
-* ``GET /model-info`` 返回模型版本与验收指标(前端信任表格用)。
-* 每次预测写入请求日志(:func:`log_request`),便于审计"生命底线"。
+* ``POST /predict``   输入一次事故的现场信息,输出派单优先级 1/2/3、严重度概率与分级界线。
+* ``GET /model-info`` 返回模型版本、分级界线与测试集验收情况(前端信任表格用)。
+* 每次预测追加一行请求日志(输入、结果、模型版本、请求标识),用于事后审计漏判。
+
+模型由环境变量 ``MODEL_URI`` 指定,未设置时使用占位模型,见 :mod:`app.model_loader`。
 
 运行(仓库根目录):
     uvicorn app.main:app --reload --port 8000
@@ -14,55 +15,75 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
+import uuid
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
-from app.model_loader import DUMMY_RISK_METRICS, ModelService, load_model
-from app.schemas import (
-    ModelInfoResponse,
-    PredictRequest,
-    PredictResponse,
-    RiskMetrics,
-)
+from app.model_loader import ModelService, build_frame, load_model, missing_info
+from app.schemas import ModelInfoResponse, PredictRequest, PredictResponse
+from src.features import SCHEMA
 
-# ---------------------------------------------------------------------------
-# 应用与模型
-# ---------------------------------------------------------------------------
-app = FastAPI(
-    title="Road Collision Severity Triage API",
-    description="英国道路事故严重程度三级分诊预测接口(1 立即 / 2 紧急 / 3 常规)。",
-    version="0.2.0",
-)
-
-model: ModelService = load_model()
-
-# 验收指标(占位;真实值接 C 评估流水线后替换为从 MLflow/文件读取)
-_RISK_METRICS = RiskMetrics(**DUMMY_RISK_METRICS)
-
-# 请求日志
-LOG_PATH = Path(__file__).resolve().parents[1] / "request_log.jsonl"
+DEFAULT_LOG_PATH = Path(__file__).resolve().parents[1] / "logs" / "request_log.jsonl"
+ACCEPTANCE_LIMITS = {
+    key: value
+    for key, value in SCHEMA["triage"]["acceptance"].items()
+    if isinstance(value, (int, float))
+}
 _logger = logging.getLogger("app.predict")
 
 
-def log_request(payload: dict) -> None:
-    """追加一条预测请求日志(追加写,不阻塞主流程)。"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.service = load_model()
+    yield
+
+
+app = FastAPI(
+    title="Road Collision Severity Triage API",
+    description="英国道路事故严重程度三级派单优先级预测接口(1 立即 / 2 紧急 / 3 常规)。",
+    version="0.3.0",
+    lifespan=lifespan,
+)
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """422 without echoing the input: a rejected NaN is not valid JSON to send back."""
+    detail = [
+        {"type": error["type"], "loc": list(error["loc"]), "msg": error["msg"]}
+        for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+
+def get_service(request: Request) -> ModelService:
+    return request.app.state.service
+
+
+Service = Annotated[ModelService, Depends(get_service)]
+
+
+def log_request(record: dict) -> None:
+    """同步追加一行 JSON;写入失败只告警,不影响已经算出的分级结果。"""
+    path = Path(os.getenv("REQUEST_LOG_PATH") or DEFAULT_LOG_PATH)
     try:
-        with LOG_PATH.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     except OSError:
-        _logger.warning("无法写入请求日志 %s", LOG_PATH)
+        _logger.warning("无法写入请求日志 %s", path, exc_info=True)
 
 
-def _features_dict(req: PredictRequest) -> dict:
-    """把 Pydantic 请求转成普通 dict,dtype None 保留为 None。"""
-    return req.model_dump()
-
-
-# ---------------------------------------------------------------------------
-# 路由
-# ---------------------------------------------------------------------------
 @app.get("/health", tags=["ops"], summary="健康检查")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -72,14 +93,16 @@ def health() -> dict[str, str]:
     "/model-info",
     response_model=ModelInfoResponse,
     tags=["info"],
-    summary="模型信息与验收指标",
+    summary="模型版本、分级界线与验收情况",
 )
-def model_info() -> ModelInfoResponse:
-    """返回模型版本与测试集验收指标,供前端信任表格展示。"""
+def model_info(service: Service) -> ModelInfoResponse:
     return ModelInfoResponse(
-        model_version=model.model_version,
-        risk_metrics=_RISK_METRICS,
-        input_columns=sorted(_features_dict(PredictRequest(collision_datetime_utc="1970-01-01T00:00:00Z")).keys()),
+        model_version=service.model_version,
+        is_placeholder=service.is_placeholder,
+        cutoffs=service.cutoffs,
+        risk_metrics=service.risk_metrics,
+        acceptance_limits=ACCEPTANCE_LIMITS,
+        loaded_at=service.loaded_at,
     )
 
 
@@ -87,37 +110,26 @@ def model_info() -> ModelInfoResponse:
     "/predict",
     response_model=PredictResponse,
     tags=["inference"],
-    summary="事故分级分诊预测",
+    summary="事故派单优先级预测",
 )
-def predict(req: PredictRequest) -> PredictResponse:
-    """输入一次事故特征,输出分诊优先级与各等级概率。"""
+def predict(req: PredictRequest, service: Service) -> PredictResponse:
     started = time.perf_counter()
-
-    features = _features_dict(req)
-    priority, probability, probabilities = model.predict_with_probs(features)
-
-    # 危及生命判定:命中最高的"立即"级即视为需要立即处置(保守兜底)
-    is_life_threatening = priority == 1
-
-    latency_ms = round((time.perf_counter() - started) * 1000, 2)
-
+    frame = build_frame(req)
+    priority, probability = service.predict(frame)
     response = PredictResponse(
+        request_id=uuid.uuid4().hex,
         priority=priority,
         probability=probability,
-        probabilities=probabilities,
-        is_life_threatening=is_life_threatening,
-        risk_metrics=_RISK_METRICS,
-        model_version=model.model_version,
-        latency_ms=latency_ms,
+        cutoffs=service.cutoffs,
+        missing_info=missing_info(frame),
+        model_version=service.model_version,
+        latency_ms=round((time.perf_counter() - started) * 1000, 2),
     )
-
     log_request(
         {
-            "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "priority": priority,
-            "probability": probability,
-            "is_life_threatening": is_life_threatening,
-            "latency_ms": latency_ms,
+            "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+            **response.model_dump(),
+            "inputs": req.model_dump(mode="json", exclude_none=True),
         }
     )
     return response
