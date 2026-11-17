@@ -1,117 +1,200 @@
-"""D 负责：FastAPI 预测接口的请求/响应契约(Pydantic v2)。
+"""D 负责:FastAPI 预测接口的请求/响应契约(Pydantic v2)。
 
-契约对齐 ``schema.json``:
-* 输入列 = 时间列 ``collision_datetime_utc`` + 10 个数值特征 + 11 个类别特征。
-* 输出 = 分诊优先级 priority(1 立即 / 2 紧急 / 3 常规)+ 严重度概率
-  + 各级概率 + 是否危及生命 + 模型评估指标。
+请求契约由 ``schema.json`` 生成,不在这里重复抄写字段:
 
-说明
-====
-* 类别特征在 schema.json 里都是字符串码(如 "1"/"2"),这里统一用 ``str | None``
-  接收,前端下拉框维护合法取值;后端不做硬枚举校验,交给 A 的 pandera
-  pipeline 在真实模型侧把关。
-* 数值特征允许缺失(None),Dummy 模型会忽略缺省值;接真实模型后由
-  ``src.features.complete_inputs`` 兼容部分信息缺失。
+* 时间与地点必填(特征工程的太阳高度角无法补缺),时间必须带时区。
+* 其余数值、类别特征可空;数值范围、类别取值都按 ``schema.json`` 校验,
+  NaN / Infinity 一律拒绝,避免脏输入被模型静默当成"常规"。
+* 车辆与伤亡人员以现场记录列表传入,由 ``src.participants.aggregate`` 聚合成
+  模型的 ``veh_*`` / ``cas_*`` 输入列(见 :mod:`app.model_loader`)。
 """
 
 from __future__ import annotations
 
-from typing import Literal
+from datetime import datetime
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    create_model,
+)
+
+from src.features import REQUIRED_INPUTS, SCHEMA
 
 __all__ = [
+    "CasualtyRecord",
+    "Cutoffs",
     "ModelInfoResponse",
     "PredictRequest",
     "PredictResponse",
     "RiskMetrics",
+    "VehicleRecord",
 ]
 
+_REQUEST_CONFIG = ConfigDict(
+    extra="forbid", allow_inf_nan=False, coerce_numbers_to_str=True
+)
 
-class PredictRequest(BaseModel):
-    """``POST /predict`` 请求体:一次事故的特征(部分字段可为空)。
 
-    字段名与 schema.json 完全一致。datetime 用 ISO 8601 UTC 字符串。
-    """
+def _blank_to_none(value: Any) -> Any:
+    return None if isinstance(value, str) and not value.strip() else value
 
-    model_config = ConfigDict(extra="forbid")
 
-    # ---- 必填:时间与地点(特征工程需要) ----
-    collision_datetime_utc: str = Field(
-        description="事故时间,ISO 8601,例如 2025-01-15T08:30:00+00:00"
+def _one_of(allowed: list, label: str):
+    def check(value):
+        if value is not None and value not in allowed:
+            raise ValueError(f"{label} 必须是 {allowed} 之一")
+        return value
+
+    return check
+
+
+def _numeric_field(name: str, spec: dict) -> tuple:
+    bounds = {
+        option: spec[key]
+        for key, option in (("min", "ge"), ("max", "le"))
+        if key in spec
+    }
+    annotation: Any = float
+    if "allowed" in spec:
+        annotation = Annotated[float, AfterValidator(_one_of(spec["allowed"], name))]
+    if name in REQUIRED_INPUTS:
+        return annotation, Field(description=spec["unit"], **bounds)
+    return annotation | None, Field(default=None, description=spec["unit"], **bounds)
+
+
+def _categorical_field(name: str, spec: dict) -> tuple:
+    codes = list(spec["categories"])
+    missing = set(spec["missing_codes"])
+
+    def normalise(value: str | None) -> str | None:
+        # 源数据里表示"未知"的编码与缺省等价,统一成 None。
+        return None if value is None or value in missing else value
+
+    annotation = Annotated[
+        str | None,
+        BeforeValidator(_blank_to_none),
+        AfterValidator(normalise),
+        AfterValidator(_one_of(codes, name)),
+    ]
+    labels = "; ".join(f"{code}={label}" for code, label in spec["categories"].items())
+    return annotation, Field(default=None, description=labels)
+
+
+def _record_model(name: str, table: str, doc: str) -> type[BaseModel]:
+    """One on-scene vehicle or casualty row, with the columns the model aggregates."""
+    spec = SCHEMA["participants"][table]
+    fields: dict[str, Any] = {
+        column: (
+            Annotated[str | None, BeforeValidator(_blank_to_none)],
+            Field(default=None, description="DfT 编码;缺省按未知(-1)计"),
+        )
+        for column in spec["counts"]
+    }
+    fields.update(
+        {column: (float | None, Field(default=None, ge=0)) for column in spec["stats"]}
     )
-    longitude: float | None = Field(default=None, description="经度(度,-9~3)")
-    latitude: float | None = Field(default=None, description="纬度(度,49~62)")
+    return create_model(name, __config__=_REQUEST_CONFIG, __doc__=doc, **fields)
 
-    # ---- 数值特征(可空) ----
-    speed_limit: float | None = Field(default=None, description="限速(mph)")
-    number_of_vehicles: float | None = Field(default=None, description="涉事车辆数")
-    temp: float | None = Field(default=None, description="气温(degC)")
-    rhum: float | None = Field(default=None, description="相对湿度(%)")
-    prcp: float | None = Field(default=None, description="降水量(mm/小时)")
-    wdir: float | None = Field(default=None, description="风向(度)")
-    wspd: float | None = Field(default=None, description="风速(km/h)")
-    pres: float | None = Field(default=None, description="气压(hPa)")
 
-    # ---- 类别特征(字符串码,可空) ----
-    road_type: str | None = Field(default=None, description="道路类型")
-    junction_detail: str | None = Field(default=None, description="路口详情")
-    junction_control: str | None = Field(default=None, description="路口控制")
-    pedestrian_crossing: str | None = Field(default=None, description="人行横道设施")
-    weather_conditions: str | None = Field(default=None, description="天气条件")
-    road_surface_conditions: str | None = Field(default=None, description="路面状况")
-    urban_or_rural_area: str | None = Field(default=None, description="城区/乡村")
-    first_road_class: str | None = Field(default=None, description="一级道路等级")
-    second_road_class: str | None = Field(default=None, description="二级道路等级")
-    light_conditions: str | None = Field(default=None, description="光照条件")
+VehicleRecord = _record_model(
+    "VehicleRecord", "vehicle", "一辆涉事车辆(字段名同 DfT 车辆表)。"
+)
+CasualtyRecord = _record_model(
+    "CasualtyRecord", "casualty", "一名伤亡人员(字段名同 DfT 伤亡表,不含伤情结论)。"
+)
 
-    # ---- 参与者聚合特征(可空,B 用 participants.py 生成,前端可用缺省) ----
-    vehicle_count: float | None = Field(default=None, description="车辆聚合特征数(占位)")
-    casualty_count: float | None = Field(default=None, description="伤亡聚合特征数(占位)")
+PredictRequest = create_model(
+    "PredictRequest",
+    __config__=_REQUEST_CONFIG,
+    __doc__=(
+        "``POST /predict`` 请求体:一次事故的现场信息。\n\n"
+        "时间与经纬度必填,其余信息可以部分缺失;``vehicles`` / ``casualties`` "
+        "缺省或为空列表表示该类信息尚未掌握。"
+    ),
+    **{
+        SCHEMA["datetime_column"]: (
+            AwareDatetime,
+            Field(
+                description="事故时间,ISO 8601 且带时区,例如 2025-01-15T08:30:00+00:00"
+            ),
+        )
+    },
+    **{
+        name: _numeric_field(name, spec)
+        for name, spec in SCHEMA["numeric_features"].items()
+    },
+    **{
+        name: _categorical_field(name, spec)
+        for name, spec in SCHEMA["categorical_features"].items()
+    },
+    vehicles=(
+        list[VehicleRecord] | None,
+        Field(default=None, description="涉事车辆列表"),
+    ),
+    casualties=(
+        list[CasualtyRecord] | None,
+        Field(default=None, description="伤亡人员列表"),
+    ),
+)
+
+
+class Cutoffs(BaseModel):
+    """严重度概率上的两条分级界线(由验证集确定,随模型一起保存)。"""
+
+    routine_urgent: float = Field(
+        description="概率 ≥ 此值为 2 级(紧急),否则 3 级(常规)"
+    )
+    urgent_immediate: float = Field(description="概率 ≥ 此值为 1 级(立即)")
 
 
 class RiskMetrics(BaseModel):
-    """模型在测试集上的验收指标(来自 schema.json 的 triage.acceptance)。
+    """当前模型在测试集(完整信息)上的四项验收指标。
 
-    供前端信任表格与答辩展示;数值由评估流水线写入,随响应回传。
+    ``status`` 为 ``not_evaluated`` 时各指标为空:占位模型没有做过测试集评估。
     """
 
-    undertriage_life: float = Field(description="危及生命事故被分到常规级的比例(漏判率)")
-    undertriage_fatal: float = Field(description="致死事故被分到常规级的比例(致死漏判率)")
-    routine_share: float = Field(description="常规级(3)占比")
-    immediate_lift: float = Field(description="立即级(1)危及生命比例相对整体的提纯倍数")
-    status: Literal["pass", "fail"] = Field(description="四项验收是否全部达标")
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "undertriage_life": 0.038,
-                "undertriage_fatal": 0.003,
-                "routine_share": 0.258,
-                "immediate_lift": 3.5,
-                "status": "pass",
-            }
-        }
+    undertriage_life: float | None = Field(description="危及生命事故被分到常规级的比例")
+    undertriage_fatal: float | None = Field(description="致死事故被分到常规级的比例")
+    routine_share: float | None = Field(description="常规级(3)占比")
+    immediate_lift: float | None = Field(
+        description="立即级(1)危及生命比例相对整体的倍数"
+    )
+    status: Literal["pass", "fail", "not_evaluated"] = Field(
+        description="四项验收是否全部达标"
     )
 
 
 class PredictResponse(BaseModel):
     """``POST /predict`` 响应体。"""
 
-    priority: Literal[1, 2, 3] = Field(description="分诊优先级:1 立即 / 2 紧急 / 3 常规")
-    probability: float = Field(description="严重度概率(模型 predict_proba 的正类概率)")
-    probabilities: dict[str, float] = Field(
-        description="三级分诊的相对概率(归一化后的展示值)"
+    request_id: str = Field(description="请求标识,与请求日志中的记录一一对应")
+    priority: Literal[1, 2, 3] = Field(
+        description="派单优先级:1 立即 / 2 紧急 / 3 常规"
     )
-    is_life_threatening: bool = Field(description="是否判定为危及生命")
-    risk_metrics: RiskMetrics = Field(description="当前模型的测试集验收指标")
-    model_version: str = Field(description="模型版本/别名")
+    probability: float = Field(description="严重度概率(致死或重伤)")
+    cutoffs: Cutoffs
+    missing_info: list[str] = Field(
+        description="本次请求未提供的信息组(weather/road/vehicle/casualty);"
+        "验收指标只针对信息完整的事故"
+    )
+    model_version: str = Field(description="模型版本")
     latency_ms: float = Field(description="推理耗时(毫秒)")
 
 
 class ModelInfoResponse(BaseModel):
-    """``GET /model-info`` 响应:模型信息与验收指标(前端信任表格用)。"""
+    """``GET /model-info`` 响应:模型版本、分级界线与验收情况。"""
 
-    model_version: str = Field(description="模型版本/别名")
-    risk_metrics: RiskMetrics = Field(description="测试集验收指标")
-    input_columns: list[str] = Field(description="模型输入列名(schema.json 契约)")
+    model_version: str
+    is_placeholder: bool = Field(description="是否为未接入真实模型的占位实现")
+    cutoffs: Cutoffs
+    risk_metrics: RiskMetrics
+    acceptance_limits: dict[str, float] = Field(
+        description="schema.json 中 triage.acceptance 的验收门槛"
+    )
+    loaded_at: datetime
