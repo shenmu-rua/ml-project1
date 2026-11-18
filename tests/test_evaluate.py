@@ -12,6 +12,7 @@ from src.evaluate import (
     classification_metrics,
     expected_calibration_error,
     remap_cutoffs,
+    select_calibrator,
     sweep_lower_cutoff,
 )
 from src.triage import acceptance, priorities, triage_metrics
@@ -98,3 +99,57 @@ def test_acceptance_exposes_the_four_checks(outcomes):
         "immediate_lift",
     }
     assert all(isinstance(value, bool) for value in checks.values())
+
+
+def test_calibration_selection_uses_later_unseen_timestamps(monkeypatch):
+    times = pd.date_range("2025-01-01", periods=5, freq="D").repeat([2, 2, 2, 4, 2])
+    x = pd.DataFrame({"collision_datetime_utc": times})
+    y = pd.Series([0, 1] * 6)
+    windows = []
+
+    def fit(model, fit_x, fit_y, method):
+        class Candidate:
+            def predict_proba(self, holdout):
+                assert fit_x.index.equals(fit_y.index)
+                assert fit_x.iloc[-1, 0] < holdout.iloc[0, 0]
+                windows.append((method, len(fit_x), len(holdout)))
+                score = 0.5 if method == "sigmoid" else 0.95
+                return np.tile([1 - score, score], (len(holdout), 1))
+
+        return Candidate()
+
+    monkeypatch.setattr("src.evaluate.fit_calibrator", fit)
+    chosen, candidates, split_at = select_calibrator(None, x, y)
+    assert split_at == 6
+    assert windows == [("isotonic", 6, 6), ("sigmoid", 6, 6)]
+    assert chosen == "sigmoid"
+    assert candidates[chosen]["holdout_log_loss"] == pytest.approx(np.log(2))
+
+
+def test_registry_uses_configured_tracking_and_loads_resolved_version(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import mlflow
+
+    from src.registry import load_registered_model
+
+    entry = SimpleNamespace(name="road-severity-model", version="5")
+    client = Mock()
+    client.get_model_version_by_alias.return_value = entry
+    client.get_model_version.return_value = entry
+    tracking = Mock()
+    load = Mock()
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    monkeypatch.setattr(mlflow, "MlflowClient", lambda: client)
+    monkeypatch.setattr(mlflow, "set_tracking_uri", tracking)
+    monkeypatch.setattr(mlflow.sklearn, "load_model", load)
+    for version in (None, "5"):
+        _, resolved = load_registered_model(version)
+        assert resolved is entry
+        tracking.assert_called_with("http://mlflow:5000")
+        load.assert_called_with("models:/road-severity-model/5")
+    client.get_model_version_by_alias.assert_called_once_with(
+        "road-severity-model", "production"
+    )
+    client.get_model_version.assert_called_once_with("road-severity-model", "5")

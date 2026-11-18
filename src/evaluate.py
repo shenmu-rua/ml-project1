@@ -14,10 +14,9 @@ what MLflow recorded for the production model. Artefacts land in
 
 import argparse
 import json
-import os
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -38,6 +37,7 @@ from sklearn.model_selection import TimeSeriesSplit
 
 from src.database import load_outcomes, load_splits
 from src.features import ROOT, SCHEMA, build_pipeline
+from src.registry import load_registered_model
 from src.triage import (
     TriageClassifier,
     acceptance,
@@ -47,12 +47,6 @@ from src.triage import (
     triage_metrics,
 )
 
-MODEL_NAME = "road-severity-model"
-MODEL_ALIAS = "production"
-MODEL_URI = f"models:/{MODEL_NAME}@{MODEL_ALIAS}"
-TRACKING_URI = os.environ.get(
-    "MLFLOW_TRACKING_URI", f"sqlite:///{(ROOT / 'mlflow.db').as_posix()}"
-)
 OUT = ROOT / "artifacts/evaluation"
 TRIAGE = SCHEMA["triage"]
 LIFE_MIN_GRADE = TRIAGE["life_threatening_min_grade"]
@@ -134,6 +128,30 @@ def fit_calibrator(
     return calibrator
 
 
+def select_calibrator(model, x_val, y_val):
+    """Use the last third of the chronological validation split for selection."""
+    times = pd.to_datetime(x_val["collision_datetime_utc"], utc=True)
+    if len(times) < 3 or times.isna().any() or not times.is_monotonic_increasing:
+        raise ValueError("Calibration needs ordered validation timestamps")
+    boundary = times.iloc[2 * len(times) // 3]
+    split_at = int(times.searchsorted(boundary))
+    if y_val.iloc[:split_at].nunique() < 2:
+        raise ValueError("Calibration fit window needs both classes")
+    candidates = {}
+    for method in ("isotonic", "sigmoid"):
+        candidate = fit_calibrator(
+            model, x_val.iloc[:split_at], y_val.iloc[:split_at], method
+        )
+        scores = candidate.predict_proba(x_val.iloc[split_at:])[:, 1]
+        target = y_val.iloc[split_at:]
+        candidates[method] = {
+            "holdout_log_loss": float(log_loss(target, scores, labels=[0, 1])),
+            "holdout_brier": float(brier_score_loss(target, scores)),
+        }
+    chosen = min(candidates, key=lambda method: candidates[method]["holdout_log_loss"])
+    return chosen, candidates, split_at
+
+
 def remap_cutoffs(
     cutoffs: tuple[float, float],
     raw_val: np.ndarray,
@@ -141,9 +159,7 @@ def remap_cutoffs(
 ) -> tuple[float, float]:
     """Move each cut-off to the same validation quantile after calibration.
 
-    Calibration is monotone, so this keeps every row in the tier it had before
-    (and therefore keeps the acceptance result) while making the displayed
-    probability a real frequency.
+    Isotonic ties can move rows across a boundary; audit the resulting tiers.
     """
     shares = [float((raw_val < cutoff).mean()) for cutoff in cutoffs]
     return tuple(float(np.quantile(calibrated_val, share)) for share in shares)
@@ -227,9 +243,7 @@ def _segment_columns(x: pd.DataFrame) -> dict[str, pd.Series]:
         )
     light = x.get("light_conditions")
     if light is not None:
-        groups["光照"] = (
-            light.astype("string").map({"1": "白天"}).fillna("黑暗/未知")
-        )
+        groups["光照"] = light.astype("string").map({"1": "白天"}).fillna("黑暗/未知")
     speed = x.get("speed_limit")
     if speed is not None:
         bands = pd.cut(
@@ -373,9 +387,11 @@ def time_series_cv(
         folds.append(
             {
                 "fold": fold,
-                "train_rows": int(len(train_index)),
-                "valid_rows": int(len(valid_index)),
-                "pr_auc": float(average_precision_score(y.iloc[valid_index], probability)),
+                "train_rows": len(train_index),
+                "valid_rows": len(valid_index),
+                "pr_auc": float(
+                    average_precision_score(y.iloc[valid_index], probability)
+                ),
                 "roc_auc": float(roc_auc_score(y.iloc[valid_index], probability)),
             }
         )
@@ -384,7 +400,7 @@ def time_series_cv(
     return {
         "method": "TimeSeriesSplit",
         "n_splits": n_splits,
-        "rows_used": int(len(x)),
+        "rows_used": len(x),
         "folds": folds,
         "pr_auc_mean": float(pr.mean()),
         "pr_auc_std": float(pr.std()),
@@ -396,26 +412,21 @@ def time_series_cv(
 # ---------------------------------------------------------------- reconcile
 
 
-def load_production(uri: str = MODEL_URI) -> TriageClassifier:
+def reconcile(
+    metrics: dict[str, float], run_id: str, tolerance: float = 1e-4
+) -> list[dict]:
+    """Compare against the same immutable run as the model used for predictions."""
     import mlflow
 
-    mlflow.set_tracking_uri(TRACKING_URI)
-    return mlflow.sklearn.load_model(uri)
-
-
-def reconcile(metrics: dict[str, float], tolerance: float = 1e-4) -> list[dict]:
-    """Compare recomputed test metrics with what training logged for production."""
-    import mlflow
-
-    try:
-        client = mlflow.MlflowClient()
-        version = client.get_model_version_by_alias(MODEL_NAME, MODEL_ALIAS)
-        logged = client.get_run(version.run_id).data.metrics
-    except Exception as error:  # offline CI must not fail on a missing registry
-        return [{"key": "mlflow", "note": f"skipped: {error}"}]
+    logged = mlflow.MlflowClient().get_run(run_id).data.metrics
     rows = []
     for key, value in metrics.items():
-        if not key.startswith("test_") or key not in logged:
+        if key == "test_ece":  # Training does not log ECE.
+            continue
+        if key not in logged:
+            rows.append(
+                {"key": key, "match": False, "note": "missing from training run"}
+            )
             continue
         rows.append(
             {
@@ -491,14 +502,21 @@ def plot_sweep(points: list[SweepPoint], current: float, path: Path) -> None:
 
 
 def evaluate(
-    *, skip_cv: bool = False, skip_drift: bool = False, max_rows: int | None = None
+    *,
+    skip_cv: bool = False,
+    skip_drift: bool = False,
+    max_rows: int | None = None,
+    model_version: str | None = None,
 ) -> dict[str, object]:
     """Run every evaluation block and write ``artifacts/evaluation``.
 
     The function is the controller: each block is a pure function that can be
     tested without MLflow, SQLite or the real model.
     """
-    OUT.mkdir(parents=True, exist_ok=True)
+    if max_rows is not None and max_rows < 1:
+        raise ValueError("max_rows must be positive")
+    out = OUT if max_rows is None else OUT / f"sample-{max_rows}"
+    out.mkdir(parents=True, exist_ok=True)
     splits = load_splits()
     outcomes = load_outcomes()
     x_train, y_train = splits["train"]
@@ -509,12 +527,21 @@ def evaluate(
         x_test, y_test = x_test.iloc[:max_rows], y_test.iloc[:max_rows]
         outcomes_test = outcomes_test.iloc[:max_rows]
 
-    model = load_production()
+    model, entry = load_registered_model(model_version)
     cutoffs = tuple(float(value) for value in model.cutoffs)
     raw_val = model.predict_proba(x_val)[:, 1]
     raw_test = model.predict_proba(x_test)[:, 1]
 
-    report: dict[str, object] = {"cutoffs": list(cutoffs)}
+    report: dict[str, object] = {
+        "model": {
+            "name": entry.name,
+            "version": entry.version,
+            "run_id": entry.run_id,
+            "estimator": type(model.pipeline[-1]).__name__,
+        },
+        "cutoffs": list(cutoffs),
+        "test_rows": len(x_test),
+    }
 
     # (1) independent recomputation and reconciliation
     metrics = classification_metrics(y_test, raw_test, "test")
@@ -522,29 +549,19 @@ def evaluate(
     metrics.update(triage_metrics(outcomes_test, raw_test, cutoffs, "test"))
     report["metrics"] = metrics
     report["acceptance"] = acceptance(metrics, prefix="test")
-    report["reconciliation"] = reconcile(metrics)
+    report["reconciliation"] = (
+        reconcile(metrics, entry.run_id) if max_rows is None else []
+    )
 
-    # (2) calibration fitted on validation, chosen on validation
-    candidates: dict[str, dict[str, object]] = {}
-    fitted: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    for method in ("isotonic", "sigmoid"):
-        calibrator = fit_calibrator(model, x_val, y_val, method)
-        val_probability = calibrator.predict_proba(x_val)[:, 1]
-        test_probability = calibrator.predict_proba(x_test)[:, 1]
-        fitted[method] = (val_probability, test_probability)
-        candidates[method] = {
-            "val_brier": float(brier_score_loss(y_val, val_probability)),
-            "val_log_loss": float(log_loss(y_val, val_probability)),
-            "test_brier": float(brier_score_loss(y_test, test_probability)),
-            "test_log_loss": float(log_loss(y_test, test_probability)),
-            "test_ece": expected_calibration_error(y_test, test_probability),
-            "test_pr_auc": float(average_precision_score(y_test, test_probability)),
-            "test_roc_auc": float(roc_auc_score(y_test, test_probability)),
-        }
-    chosen = min(candidates, key=lambda name: float(candidates[name]["val_log_loss"]))
-    calibrated_val, calibrated_test = fitted[chosen]
+    # (2) Choose on later validation timestamps, then refit on all validation rows.
+    chosen, candidates, split_at = select_calibrator(model, x_val, y_val)
+    calibrator = fit_calibrator(model, x_val, y_val, chosen)
+    calibrated_val = calibrator.predict_proba(x_val)[:, 1]
+    calibrated_test = calibrator.predict_proba(x_test)[:, 1]
     remapped = remap_cutoffs(cutoffs, raw_val, calibrated_val)
-    calibrated_metrics = triage_metrics(outcomes_test, calibrated_test, remapped, "test")
+    calibrated_metrics = triage_metrics(
+        outcomes_test, calibrated_test, remapped, "test"
+    )
     report["calibration"] = {
         "baseline": {
             "val_brier": float(brier_score_loss(y_val, raw_val)),
@@ -554,29 +571,39 @@ def evaluate(
             "test_ece": metrics["test_ece"],
         },
         "candidates": candidates,
+        "selection": {
+            "fit_rows": split_at,
+            "holdout_rows": len(x_val) - split_at,
+            "holdout_start": str(x_val["collision_datetime_utc"].iloc[split_at]),
+        },
+        "test": classification_metrics(y_test, calibrated_test, "test")
+        | {
+            "test_ece": expected_calibration_error(y_test, calibrated_test),
+        },
         "chosen": chosen,
         "remapped_cutoffs": list(remapped),
+        "triage_after": calibrated_metrics,
         "acceptance_after": acceptance(calibrated_metrics, "test"),
         "tier_share_shift": {
             key: float(calibrated_metrics[f"test_{key}"] - metrics[f"test_{key}"])
             for key in ("p1_share", "p2_share", "p3_share", "undertriage_life")
         },
     }
-    plot_reliability(y_test, raw_test, calibrated_test, OUT / "reliability_test.png")
+    plot_reliability(y_test, raw_test, calibrated_test, out / "reliability_test.png")
 
     # (3) tier audit on validation, stability check on test
     sweep = sweep_lower_cutoff(outcomes["val"], raw_val, cutoffs[1])
     report["sweep"] = [asdict(point) for point in sweep]
     report["sensitivity"] = sensitivity_analysis(outcomes_test, raw_test, cutoffs)
     if sweep:
-        plot_sweep(sweep, cutoffs[0], OUT / "cutoff_tradeoff_val.png")
+        plot_sweep(sweep, cutoffs[0], out / "cutoff_tradeoff_val.png")
 
     # (4) subgroups and worst cases
     segments = segment_report(x_test, y_test, raw_test, outcomes_test, cutoffs)
-    segments.to_csv(OUT / "segments_test.csv", index=False, encoding="utf-8-sig")
+    segments.to_csv(out / "segments_test.csv", index=False, encoding="utf-8-sig")
     report["segments"] = segments.to_dict(orient="records")
     errors = error_cases(x_test, raw_test, outcomes_test, cutoffs)
-    errors.to_csv(OUT / "error_cases_test.csv", index=False, encoding="utf-8-sig")
+    errors.to_csv(out / "error_cases_test.csv", index=False, encoding="utf-8-sig")
     report["error_cases"] = errors.head(10).to_dict(orient="records")
 
     # (5) ordered cross-validation
@@ -592,9 +619,9 @@ def evaluate(
     if not skip_drift:
         from src.explain import drift_report
 
-        report["drift"] = drift_report(x_train, x_test, OUT / "drift_report")
+        report["drift"] = drift_report(x_train, x_test, out / "drift_report")
 
-    (OUT / "metrics.json").write_text(
+    (out / "metrics.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
@@ -606,14 +633,22 @@ def main() -> None:
     parser.add_argument("--skip-cv", action="store_true", help="skip time-series CV")
     parser.add_argument("--skip-drift", action="store_true", help="skip drift report")
     parser.add_argument("--max-rows", type=int, help="use only the first N test rows")
+    parser.add_argument(
+        "--model-version", help="pin a registered version (default: production alias)"
+    )
     args = parser.parse_args()
     report = evaluate(
         skip_cv=args.skip_cv,
         skip_drift=args.skip_drift,
         max_rows=args.max_rows,
+        model_version=args.model_version,
     )
     print("EVALUATE_COMPLETE", json.dumps(report["acceptance"], ensure_ascii=False))
-    print("ARTIFACTS", str(OUT), flush=True)
+    print(
+        "ARTIFACTS",
+        str(OUT if args.max_rows is None else OUT / f"sample-{args.max_rows}"),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -8,8 +8,10 @@ import numpy as np
 import pandas as pd
 import pytest
 from lightgbm import LGBMClassifier
+from scipy.special import expit
+from xgboost import XGBClassifier
 
-from src.explain import collapse_to_source, explain_single
+from src.explain import _psi_fallback, collapse_to_source, explain_single, global_shap
 from src.features import INPUT_COLUMNS, build_pipeline
 from src.triage import TriageClassifier
 
@@ -82,3 +84,40 @@ def test_explanation_reports_tier_and_probability(frame, model):
 def test_explain_single_rejects_more_than_one_row(frame, model):
     with pytest.raises(ValueError):
         explain_single(frame, model=model)
+
+
+def test_xgboost_shap_explains_sparse_predictions(frame, tmp_path):
+    rows = frame.iloc[[0] * 120].reset_index(drop=True)
+    rows["urban_or_rural_area"] = ["1", "2"] * 60
+    y = (rows["urban_or_rural_area"] == "1").astype(int)
+    pipeline = build_pipeline(XGBClassifier(n_estimators=4, max_depth=1, n_jobs=1))
+    pipeline.fit(rows, y)
+    model = TriageClassifier(pipeline, (0.2, 0.8))
+    sample = rows.iloc[:2]
+    probabilities = model.predict_proba(sample)[:, 1]
+    assert probabilities[0] > 0.5 > probabilities[1]
+    for i, probability in enumerate(probabilities):
+        result = explain_single(sample.iloc[[i]], model=model, top_n=1)
+        margin = (
+            result.base_value + result.contributions[0].impact + result.other_impact
+        )
+        assert expit(margin) == pytest.approx(probability, abs=1e-6)
+    summary = global_shap(sample, model=model, out_dir=tmp_path)
+    assert summary["groups"]["road"] == pytest.approx(1.0)
+
+
+def test_psi_includes_out_of_range_observations(tmp_path):
+    ref = pd.DataFrame({"v": np.tile(np.arange(100), 10)})
+    cur = pd.DataFrame({"v": np.r_[np.tile(np.arange(100), 7), np.full(300, 200)]})
+    report = _psi_fallback(ref, cur, tmp_path / "drift", RuntimeError())
+    expected = 9 * (0.07 - 0.1) * np.log(0.7) + (0.37 - 0.1) * np.log(3.7)
+    assert report["top"][0]["psi"] == pytest.approx(expected)
+    assert report["drifted_share"] == 1.0
+
+
+def test_psi_reports_insufficient_data(tmp_path):
+    rows = pd.DataFrame({"v": range(60)})
+    report = _psi_fallback(rows, rows.iloc[:24], tmp_path / "drift", RuntimeError())
+    assert report["status"] == "insufficient_data"
+    assert report["drifted_share"] is None
+    assert pd.read_csv(tmp_path / "drift.csv").empty

@@ -10,6 +10,7 @@ Two audiences, kept in separate sections below:
   from the API.
 """
 
+import argparse
 import json
 from dataclasses import dataclass
 from functools import lru_cache
@@ -17,12 +18,19 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
+from scipy.special import expit
 
-from src.features import INFO_GROUPS, INPUT_COLUMNS, NUMERIC_FEATURES, ROOT, complete_inputs
+from src.features import (
+    INFO_GROUPS,
+    INPUT_COLUMNS,
+    NUMERIC_FEATURES,
+    ROOT,
+    complete_inputs,
+)
+from src.registry import load_registered_model
 from src.triage import TriageClassifier, priorities
 
-MODEL_URI = "models:/road-severity-model@production"
-TRACKING_URI = f"sqlite:///{(ROOT / 'mlflow.db').as_posix()}"
 # Longest first, so "age_of_casualty" is not swallowed by a hypothetical "age".
 SCHEMA_COLUMNS = sorted(
     set(INPUT_COLUMNS + NUMERIC_FEATURES),
@@ -56,15 +64,6 @@ class SingleExplanation:
 
 
 @lru_cache(maxsize=2)
-def load_model(uri: str = MODEL_URI) -> TriageClassifier:
-    """Cached so the API pays the MLflow cost once, not per request."""
-    import mlflow
-
-    mlflow.set_tracking_uri(TRACKING_URI)
-    return mlflow.sklearn.load_model(uri)
-
-
-@lru_cache(maxsize=2)
 def _explainer(model: TriageClassifier):
     """TreeExplainer construction takes a second; cache it per model instance."""
     import shap
@@ -72,32 +71,30 @@ def _explainer(model: TriageClassifier):
     return shap.TreeExplainer(model.pipeline[-1])
 
 
-def _matrix(preprocess, frame: pd.DataFrame, dense: bool = True):
-    transformed = preprocess.transform(frame)
-    if dense and hasattr(transformed, "toarray"):
-        return transformed.toarray()
-    return transformed
+def _tree_contributions(model, frame):
+    """Explain the same encoded observations the prediction pipeline scores."""
+    from xgboost import XGBClassifier
 
-
-def _positive_row(raw_values, expected_value, index: int = 0):
-    """Take the positive class; shap returns 2-D or 3-D depending on version."""
-    if isinstance(raw_values, list):
-        raw_values = raw_values[1]
-    values = np.asarray(raw_values)
+    preprocess = model.pipeline[:-1]
+    encoded = preprocess.transform(frame)
+    estimator = model.pipeline[-1]
+    # An absent entry in XGBoost's CSR input follows the missing-value branch.
+    # LightGBM's SHAP backend returns dense contributions for dense input.
+    matrix = encoded
+    if sparse.issparse(encoded) and not isinstance(estimator, XGBClassifier):
+        matrix = encoded.toarray()
+    explainer = _explainer(model)
+    raw = explainer.shap_values(matrix)
+    values = np.asarray(raw[1] if isinstance(raw, list) else raw)
     if values.ndim == 3:
         values = values[..., 1]
-    base = np.ravel(expected_value)
-    base = float(base[1]) if base.size > 1 else float(base[0])
-    return values[index], base
-
-
-def _positive_matrix(raw_values) -> np.ndarray:
-    if isinstance(raw_values, list):
-        raw_values = raw_values[1]
-    values = np.asarray(raw_values)
-    if values.ndim == 3:
-        values = values[..., 1]
-    return values
+    base = float(np.ravel(explainer.expected_value)[-1])
+    probability = estimator.predict_proba(encoded)[:, 1]
+    if not np.allclose(
+        expit(base + values.sum(axis=1)), probability, rtol=1e-5, atol=1e-6
+    ):
+        raise ValueError("SHAP log-odds do not reproduce the pipeline probabilities")
+    return matrix, values, base, probability
 
 
 def collapse_to_source(
@@ -112,7 +109,7 @@ def collapse_to_source(
     columns = sorted(schema_columns or SCHEMA_COLUMNS, key=len, reverse=True)
     source: dict[str, float] = {}
     for name, value in zip(feature_names, shap_row):
-        raw = str(name).split("__", 1)[-1]
+        raw = str(name).split("__", 1)[-1].removeprefix("missingindicator_")
         match = next(
             (
                 column
@@ -138,19 +135,16 @@ def explain_single(
     """
     if len(row) != 1:
         raise ValueError("explain_single expects exactly one row.")
-    model = model or load_model()
+    if model is None:
+        model, _ = load_registered_model()
     frame = complete_inputs(row)
     preprocess = model.pipeline[:-1]
-    matrix = _matrix(preprocess, frame)
-    explainer = _explainer(model)
-    raw_values = explainer.shap_values(matrix, check_additivity=False)
-    shap_row, base = _positive_row(raw_values, explainer.expected_value)
-    probability = float(model.predict_proba(frame)[:, 1][0])
+    _, values, base, predicted = _tree_contributions(model, frame)
+    shap_row = values[0]
+    probability = float(predicted[0])
     priority = int(priorities(np.array([probability]), model.cutoffs)[0])
 
-    aggregated = collapse_to_source(
-        preprocess.get_feature_names_out(), shap_row
-    )
+    aggregated = collapse_to_source(preprocess.get_feature_names_out(), shap_row)
     ordered = sorted(aggregated.items(), key=lambda item: abs(item[1]), reverse=True)
     display = frame.iloc[0]
 
@@ -197,19 +191,26 @@ def global_shap(
     import matplotlib.pyplot as plt
     import shap
 
-    model = model or load_model()
+    if model is None:
+        model, _ = load_registered_model()
     out_dir = Path(out_dir or (ROOT / "artifacts/evaluation"))
     out_dir.mkdir(parents=True, exist_ok=True)
     if len(x) > sample_rows:
         x = x.sample(sample_rows, random_state=seed)
 
     preprocess = model.pipeline[:-1]
-    matrix = _matrix(preprocess, complete_inputs(x))
-    explainer = _explainer(model)
-    values = _positive_matrix(explainer.shap_values(matrix, check_additivity=False))
+    matrix, values, _, _ = _tree_contributions(model, complete_inputs(x))
+    if sparse.issparse(matrix):
+        # Missing entries remain visibly missing in the XGBoost beeswarm.
+        entries = matrix.tocoo()
+        matrix = np.full(entries.shape, np.nan, dtype=float)
+        matrix[entries.row, entries.col] = entries.data
     names = np.asarray(preprocess.get_feature_names_out())
 
-    for plot_type, filename in (("dot", "shap_beeswarm.png"), ("bar", "shap_importance.png")):
+    for plot_type, filename in (
+        ("dot", "shap_beeswarm.png"),
+        ("bar", "shap_importance.png"),
+    ):
         shap.summary_plot(
             values,
             matrix,
@@ -237,22 +238,35 @@ def global_shap(
     )
     return {
         "groups": summary,
-        "top_features": importance.sort_values(ascending=False).head(20).round(4).to_dict(),
+        "top_features": importance.sort_values(ascending=False)
+        .head(20)
+        .round(4)
+        .to_dict(),
     }
 
 
 def _information_group(raw: str) -> str:
+    raw = raw.removeprefix("missingindicator_")
     if raw.startswith("veh_"):
         return "vehicle"
     if raw.startswith("cas_"):
         return "casualty"
-    if raw in INFO_GROUPS["weather"]:
+    if raw in INFO_GROUPS["weather"] or raw in (
+        "rain_present",
+        "wind_east_kmh",
+        "wind_north_kmh",
+    ):
         return "weather"
-    if any(raw == column or raw.startswith(f"{column}_") for column in INFO_GROUPS["road"]):
+    if any(
+        raw == column or raw.startswith(f"{column}_") for column in INFO_GROUPS["road"]
+    ):
         return "road"
     if raw in ("latitude", "longitude"):
         return "location"
-    if any(token in raw for token in ("hour", "weekday", "month", "sun", "solar")):
+    if any(
+        token in raw
+        for token in ("hour", "weekday", "weekend", "month", "sun", "solar")
+    ):
         return "time"
     return "other"
 
@@ -282,7 +296,7 @@ def drift_report(
         return {"ok": True, "html": str(html_path)}
     except ImportError:
         pass
-    except Exception as error:
+    except (TypeError, ValueError, RuntimeError, KeyError) as error:
         return _psi_fallback(reference, current, out_path, error)
 
     try:  # evidently <= 0.6
@@ -293,7 +307,7 @@ def drift_report(
         report.run(reference_data=reference, current_data=current)
         report.save_html(str(html_path))
         return {"ok": True, "html": str(html_path), "api": "legacy"}
-    except Exception as error:
+    except (ImportError, TypeError, ValueError, RuntimeError, KeyError) as error:
         return _psi_fallback(reference, current, out_path, error)
 
 
@@ -301,8 +315,15 @@ def main() -> None:
     """Write the global SHAP artefacts the evaluation report refers to."""
     from src.database import load_splits
 
+    parser = argparse.ArgumentParser(description="Generate global SHAP artefacts")
+    parser.add_argument(
+        "--model-version", help="pin a registered version (default: production alias)"
+    )
+    args = parser.parse_args()
+    model, entry = load_registered_model(args.model_version)
     x_test, _ = load_splits()["test"]
-    result = global_shap(x_test)
+    result = global_shap(x_test, model=model)
+    print("MODEL", entry.name, entry.version, entry.run_id)
     print("EXPLAIN_COMPLETE", json.dumps(result["groups"], ensure_ascii=False))
     print("ARTIFACTS", str(ROOT / "artifacts/evaluation"), flush=True)
 
@@ -316,27 +337,35 @@ def _psi_fallback(
 ) -> dict[str, object]:
     """Population stability index per numeric field when Evidently is unavailable."""
     rows = []
-    for column in reference.columns:
-        ref = pd.to_numeric(reference[column], errors="coerce")
-        cur = pd.to_numeric(current[column], errors="coerce")
-        if ref.notna().sum() < 50 or cur.notna().sum() < 50:
+    for column in reference.select_dtypes(include="number").columns:
+        ref = reference[column].dropna().to_numpy(dtype=float)
+        cur = current[column].dropna().to_numpy(dtype=float)
+        ref, cur = ref[np.isfinite(ref)], cur[np.isfinite(cur)]
+        if len(ref) < 50 or len(cur) < 50:
             continue
-        edges = np.unique(np.nanquantile(ref, np.linspace(0, 1, bins + 1)))
-        if len(edges) < 3:
-            continue
-        ref_share = np.histogram(ref.dropna(), bins=edges)[0] / ref.notna().sum()
-        cur_share = np.histogram(cur.dropna(), bins=edges)[0] / cur.notna().sum()
+        interior = np.quantile(ref, np.arange(1, bins) / bins)
+        # Keep a point mass at the reference minimum in its own bucket.
+        interior[interior == ref.min()] = np.nextafter(ref.min(), np.inf)
+        if ref.min() == ref.max():
+            interior = [ref[0], np.nextafter(ref[0], np.inf)]
+        edges = np.r_[-np.inf, np.unique(interior), np.inf]
+        ref_share = np.histogram(ref, bins=edges)[0] / len(ref)
+        cur_share = np.histogram(cur, bins=edges)[0] / len(cur)
         ref_share = np.clip(ref_share, 1e-6, None)
         cur_share = np.clip(cur_share, 1e-6, None)
         psi = float(np.sum((cur_share - ref_share) * np.log(cur_share / ref_share)))
         rows.append({"feature": column, "psi": psi, "drifted": psi > 0.2})
-    table = pd.DataFrame(rows).sort_values("psi", ascending=False)
+    table = pd.DataFrame(rows, columns=["feature", "psi", "drifted"]).sort_values(
+        "psi", ascending=False
+    )
     table.to_csv(out_path.with_suffix(".csv"), index=False, encoding="utf-8-sig")
     return {
         "ok": False,
         "fallback": "psi",
         "reason": str(error),
-        "drifted_share": float(table["drifted"].mean()) if len(table) else 0.0,
+        "status": "computed" if len(table) else "insufficient_data",
+        "evaluated_columns": len(table),
+        "drifted_share": float(table["drifted"].mean()) if len(table) else None,
         "top": table.head(15).to_dict(orient="records"),
     }
 
