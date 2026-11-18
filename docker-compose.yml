@@ -47,6 +47,7 @@ services:
     environment:
       # 容器内通过服务名访问 API
       - API_URL=http://api:8000
+      - API_DOCS_URL=${API_DOCS_URL:-http://localhost:8000/docs}
     depends_on:
       api:
         condition: service_healthy

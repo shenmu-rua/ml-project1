@@ -4,7 +4,7 @@
 * 结果:醒目的 1 / 2 / 3 级横幅 + 严重度概率与模型的两条分级界线。
 * 底部信任表格:当前模型在测试集上的验收指标,门槛与数值都来自 ``/model-info``;
   占位模型没有评估结果时如实说明。
-* 单样本 SHAP 解释待 C 的 ``src.explain`` 就绪后接入,目前只给出说明,不画示意图。
+* 单样本 SHAP 瀑布图使用后端随本次预测返回的特征贡献。
 
 运行:
     streamlit run app/frontend.py
@@ -30,6 +30,8 @@ SCHEMA = json.loads(
 API_URL = (
     os.getenv("API_URL", "http://127.0.0.1:8000").rstrip("/").removesuffix("/predict")
 )
+
+API_DOCS_URL = os.getenv("API_DOCS_URL") or f"{API_URL}/docs"
 
 LEVEL_META: dict[int, dict[str, str]] = {
     1: {
@@ -105,7 +107,7 @@ ACCEPTANCE_ROWS = [
 # 后端调用
 # ---------------------------------------------------------------------------
 def call_predict(features: dict[str, Any]) -> requests.Response:
-    return requests.post(f"{API_URL}/predict", json=features, timeout=10)
+    return requests.post(f"{API_URL}/predict", params={"explain": True}, json=features, timeout=(5, 60))
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -249,6 +251,59 @@ def probability_against_cutoffs(result: dict[str, Any]) -> None:
     )
 
 
+def show_explanation(result: dict[str, Any]) -> None:
+    st.subheader("本次预测的 SHAP 解释")
+    explanation = result.get("explanation")
+    if explanation is None:
+        st.info("本次预测暂无可验证的特征贡献。")
+        return
+
+    base = explanation["base_value"]
+    position = base
+    rows = []
+    items = [*explanation["contributions"], {
+        "feature": "其余特征合计", "value": "—", "impact": explanation["other_impact"]
+    }]
+    for order, item in enumerate(items):
+        field = item["feature"]
+        impact = item["impact"]
+        label = CATEGORY_LABELS.get(field, field)
+        rows.append({
+            "顺序": order, "特征": label, "模型字段": field, "输入值": item["value"],
+            "贡献": impact, "起点": position, "终点": position + impact,
+            "方向": "推高" if impact >= 0 else "降低",
+        })
+        position += impact
+
+    st.caption(
+        f"{result['model_version']} · 基准 log-odds {base:.3f} → "
+        f"本次 log-odds {position:.3f}（模型概率 {result['probability']:.1%}）。"
+        "各行按贡献绝对值排序，悬停可查看字段取值和带符号的贡献。"
+    )
+    st.vega_lite_chart(
+        pd.DataFrame(rows),
+        {
+            "mark": {"type": "bar", "size": 13},
+            "encoding": {
+                "y": {"field": "特征", "type": "nominal", "title": None,
+                      "sort": {"field": "顺序", "op": "min"}, "axis": {"labelLimit": 185}},
+                "x": {"field": "起点", "type": "quantitative", "title": "累计 log-odds",
+                      "scale": {"zero": False}},
+                "x2": {"field": "终点"},
+                "color": {"field": "方向", "type": "nominal", "title": None,
+                          "scale": {"domain": ["推高", "降低"], "range": ["#ba4829", "#26728c"]},
+                          "legend": {"orient": "bottom"}},
+                "tooltip": [{"field": "模型字段", "type": "nominal"},
+                            {"field": "输入值", "type": "nominal"},
+                            {"field": "贡献", "type": "quantitative", "format": "+.4f"},
+                            {"field": "终点", "type": "quantitative", "format": ".4f"}],
+            },
+        },
+        width="stretch",
+        alt="各特征对本次预测的 SHAP 贡献瀑布图",
+    )
+
+
 def missing_info_notice(missing: list[str]) -> None:
     if missing:
         names = "、".join(INFO_GROUP_LABELS.get(group, group) for group in missing)
@@ -318,6 +373,8 @@ def main() -> None:
     st.title("🚑 道路事故派单优先级系统")
     st.caption("输入事故现场信息,系统给出 1(立即)/2(紧急)/3(常规)三级急救派单优先级。")
 
+    st.link_button("查看 API 文档", API_DOCS_URL, icon=":material/menu_book:")
+
     with st.sidebar:
         features = sidebar_inputs()
     vehicles = participant_editor("vehicle", "涉事车辆(可选)")
@@ -347,8 +404,7 @@ def main() -> None:
     missing_info_notice(result["missing_info"])
     probability_against_cutoffs(result)
 
-    st.markdown("#### 🔍 模型解读 (SHAP)")
-    st.info("单样本 SHAP 瀑布图待评估模块 `src.explain`(C)就绪后接入,目前暂不提供。")
+    show_explanation(result)
 
     st.divider()
     show_model_info()

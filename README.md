@@ -45,6 +45,9 @@ mlflow ui --backend-store-uri sqlite:///mlflow.db
 
 ## 预测服务与前端（D）
 
+网页每次分诊都会请求 `POST /predict?explain=true`，用当前模型的 SHAP 贡献绘制单样本瀑布图。横轴使用 log-odds。
+“查看 API 文档”打开 Swagger UI。反向代理部署时，将前端的 `API_DOCS_URL` 设置为浏览器可访问的文档地址，例如 `https://ml.shenmu.xyz/api/docs`。
+
 ```bash
 uvicorn app.main:app --port 8000        # API，文档在 http://127.0.0.1:8000/docs
 streamlit run app/frontend.py           # 前端，默认访问 http://127.0.0.1:8000

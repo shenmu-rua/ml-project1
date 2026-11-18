@@ -73,7 +73,7 @@ def _explainer(model: TriageClassifier):
 
 def _tree_contributions(model, frame):
     """Explain the same encoded observations the prediction pipeline scores."""
-    from xgboost import XGBClassifier
+    from shap.utils import safe_isinstance
 
     preprocess = model.pipeline[:-1]
     encoded = preprocess.transform(frame)
@@ -81,7 +81,7 @@ def _tree_contributions(model, frame):
     # An absent entry in XGBoost's CSR input follows the missing-value branch.
     # LightGBM's SHAP backend returns dense contributions for dense input.
     matrix = encoded
-    if sparse.issparse(encoded) and not isinstance(estimator, XGBClassifier):
+    if sparse.issparse(encoded) and not safe_isinstance(estimator, "xgboost.sklearn.XGBClassifier"):
         matrix = encoded.toarray()
     explainer = _explainer(model)
     raw = explainer.shap_values(matrix)

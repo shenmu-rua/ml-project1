@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
 import uuid
@@ -29,6 +30,7 @@ from fastapi.responses import JSONResponse
 
 from app.model_loader import ModelService, build_frame, load_model, missing_info
 from app.schemas import ModelInfoResponse, PredictRequest, PredictResponse
+from src.explain import SingleExplanation, explain_single
 from src.features import SCHEMA
 
 DEFAULT_LOG_PATH = Path(__file__).resolve().parents[1] / "logs" / "request_log.jsonl"
@@ -109,13 +111,26 @@ def model_info(service: Service) -> ModelInfoResponse:
 @app.post(
     "/predict",
     response_model=PredictResponse,
+    response_model_exclude_unset=True,
     tags=["inference"],
     summary="事故派单优先级预测",
 )
-def predict(req: PredictRequest, service: Service) -> PredictResponse:
+def predict(req: PredictRequest, service: Service, explain: bool = False) -> PredictResponse:
     started = time.perf_counter()
     frame = build_frame(req)
     priority, probability = service.predict(frame)
+    explanation: SingleExplanation | None = None
+    if explain and not service.is_placeholder:
+        try:
+            candidate = explain_single(frame, model=service.model)
+            if candidate.priority == priority and math.isclose(
+                candidate.probability, probability, rel_tol=1e-6, abs_tol=1e-8
+            ):
+                explanation = candidate
+            else:
+                _logger.error("SHAP 与本次预测不一致，模型 %s", service.model_version)
+        except Exception:
+            _logger.exception("单样本 SHAP 计算失败，模型 %s", service.model_version)
     response = PredictResponse(
         request_id=uuid.uuid4().hex,
         priority=priority,
@@ -125,10 +140,12 @@ def predict(req: PredictRequest, service: Service) -> PredictResponse:
         model_version=service.model_version,
         latency_ms=round((time.perf_counter() - started) * 1000, 2),
     )
+    if explain:
+        response.explanation = explanation
     log_request(
         {
             "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
-            **response.model_dump(),
+            **response.model_dump(exclude={"explanation"}),
             "inputs": req.model_dump(mode="json", exclude_none=True),
         }
     )

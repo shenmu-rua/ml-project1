@@ -24,6 +24,7 @@ from pydantic import (
     create_model,
 )
 
+from src.explain import SingleExplanation
 from src.features import REQUIRED_INPUTS, SCHEMA
 
 __all__ = [
@@ -185,6 +186,9 @@ class PredictResponse(BaseModel):
     )
     model_version: str = Field(description="模型版本")
     latency_ms: float = Field(description="推理耗时(毫秒)")
+    explanation: SingleExplanation | None = Field(
+        default=None, description="请求 explain=true 时返回单样本 SHAP 解释，贡献单位为 log-odds"
+    )
 
 
 class ModelInfoResponse(BaseModel):
