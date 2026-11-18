@@ -7,10 +7,13 @@ also proves that ``explain_single`` survives a realistically sparse record.
 import numpy as np
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 from lightgbm import LGBMClassifier
 from scipy.special import expit
 from xgboost import XGBClassifier
 
+from app.main import app, get_service
+from app.model_loader import DummyTriageModel, ModelService
 from src.explain import _psi_fallback, collapse_to_source, explain_single, global_shap
 from src.features import INPUT_COLUMNS, build_pipeline
 from src.triage import TriageClassifier
@@ -121,3 +124,35 @@ def test_psi_reports_insufficient_data(tmp_path):
     assert report["status"] == "insufficient_data"
     assert report["drifted_share"] is None
     assert pd.read_csv(tmp_path / "drift.csv").empty
+
+
+@pytest.mark.parametrize("speed", [30, 60])
+def test_predict_explains_the_loaded_model_and_same_request(model, speed, monkeypatch):
+    service = ModelService(model, "test LightGBM")
+    monkeypatch.setitem(app.dependency_overrides, get_service, lambda: service)
+    client = TestClient(app)
+    payload = {
+        "collision_datetime_utc": "2025-01-15T08:30:00Z",
+        "latitude": 51.5, "longitude": -0.1, "speed_limit": speed,
+    }
+    plain = client.post("/predict", json=payload).json()
+    explained = client.post("/predict?explain=true", json=payload).json()
+    assert "explanation" not in plain
+    assert explained["model_version"] == plain["model_version"] == service.model_version
+    shap = explained["explanation"]
+    assert shap["priority"] == plain["priority"] == explained["priority"]
+    assert shap["probability"] == plain["probability"] == explained["probability"]
+    assert any(item["feature"] == "speed_limit" and item["value"] == str(speed)
+               for item in shap["contributions"])
+    margin = shap["base_value"] + sum(item["impact"] for item in shap["contributions"])
+    assert expit(margin + shap["other_impact"]) == pytest.approx(plain["probability"])
+
+
+def test_placeholder_returns_prediction_without_shap(monkeypatch):
+    service = ModelService(DummyTriageModel(), "dummy-v1", is_placeholder=True)
+    monkeypatch.setitem(app.dependency_overrides, get_service, lambda: service)
+    response = TestClient(app).post("/predict?explain=true", json={
+        "collision_datetime_utc": "2025-01-15T08:30:00Z", "latitude": 51.5, "longitude": -0.1
+    })
+    assert response.status_code == 200
+    assert response.json()["explanation"] is None
