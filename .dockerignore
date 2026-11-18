@@ -1,0 +1,18 @@
+# 构建上下文只需要 requirements.txt、schema.json、app/ 和 src/。
+.git
+.github
+.dvc
+.venv
+venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+data
+notebooks
+artifacts
+docs
+tests
+logs
+mlruns
+mlartifacts
+mlflow.db

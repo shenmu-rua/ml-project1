@@ -11,9 +11,55 @@ mlflow.db
 .ruff_cache/
 .idea/
 .vscode/
-# 管线生成的数据由 data/.gitignore 忽略（DVC 维护）；data/raw/ 的原始 CSV 入库
+# D 的请求日志(运行时生成,不入库)
+logs/
+# 本地数据、模型与生成产物
+/data/
+/artifacts/
+/model/
+/models/
+/checkpoints/
+/outputs/
+/runs/
+/reports/
+
+# 数据文件（任意目录）
+*.csv
+*.tsv
+*.jsonl
+*.parquet
+*.feather
+*.arrow
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.mat
+*.xls
+*.xlsx
+
+# SQLite / 数据库及其临时文件（任意目录）
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-*
+*.sqlite3-*
+*.db-*
+
+# 训练后的模型与检查点（任意目录）
+*.pkl
+*.pickle
+*.joblib
+*.skops
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.keras
+*.tflite
+*.ubj
+*.bin
 # 本地工具与临时目录
 .audit/
-.claude/
 .spec-workflow/
-artifacts/.render/

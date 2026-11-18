@@ -1,9 +1,0 @@
-{
-  "road": 0.4116,
-  "vehicle": 0.2522,
-  "casualty": 0.1618,
-  "time": 0.0734,
-  "location": 0.0417,
-  "weather": 0.0374,
-  "other": 0.0219
-}

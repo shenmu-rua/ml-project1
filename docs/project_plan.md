@@ -94,12 +94,12 @@
 
 ```
 ml-project1/
-├── data/
-│   ├── raw/                    # A：原始 CSV（事故、车辆、伤亡、天气），入库且只读
-│   ├── *_report.json           # A：质量、切分、预处理三份报告（DVC 指标）
+├── data/                       # 本地数据与管线产物，整体 Git 忽略
+│   ├── raw/                    # A：原始 CSV（事故、车辆、伤亡、天气），本地只读，Git 忽略
+│   ├── *_report.json           # A：本地生成的质量、切分、预处理报告（Git 忽略）
 │   └── processed/ splits/ eda_figures/ road_collisions.sqlite   # 管线生成，不入库
 ├── notebooks/
-│   └── eda.ipynb               # A
+│   └── eda.ipynb               # A：代码与说明入库，运行输出仅保留在本地
 ├── src/
 │   ├── data_pipeline.py        # A：清洗、天气匹配、时间切分
 │   ├── astronomy.py            # A：日照特征
@@ -117,9 +117,9 @@ ml-project1/
 ├── app/                        # D（FastAPI + 前端）
 ├── tests/                      # 每人写自己的
 ├── docs/                       # 分工方案与四份报告章节
-├── artifacts/                  # 生成的 docx 报告
+├── artifacts/                  # 本地生成的 docx 报告，Git 忽略
 ├── schema.json                 # 特征、切分与派单分级的共同契约
-├── dvc.yaml / dvc.lock         # 数据管线
+├── dvc.yaml / dvc.lock         # 数据管线配置与依赖校验元数据
 ├── requirements.txt            # 全部依赖（固定版本）
 ├── docker-compose.yml          # D（API + MLflow，待建）
 └── .github/workflows/ci.yml    # D（待建）

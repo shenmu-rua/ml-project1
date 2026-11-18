@@ -23,6 +23,10 @@ pytest
 
 ## 数据与训练
 
+仓库保留源码、测试、配置和 Markdown 文档。`data/`、`artifacts/`、数据库、模型和训练输出均由 `.gitignore` 排除，
+本地文件保留；`schema.json`、`dvc.yaml` 和 `dvc.lock` 作为工程配置继续入库。Notebook 提交代码与说明，提交前清除运行输出。
+运行管线前，请在 `data/raw/` 放置 2024、2025 年的事故、车辆、伤亡三类 CSV，以及 `weather_2024_2025.csv` 天气观测表。
+
 ```bash
 python -m src.data_pipeline all   # A：清洗、天气匹配、时间切分（或 dvc repro）
 python -m src.database            # 合并全部 CSV 为 data/road_collisions.sqlite
@@ -38,6 +42,40 @@ mlflow ui --backend-store-uri sqlite:///mlflow.db
 它用于辅助急救调度分级派单：`predict` 返回优先级（1 立即、2 紧急、3 常规），`predict_proba` 返回严重程度概率，
 `model.pipeline` 是包含预处理的完整 Pipeline。分级界线与验收标准见 `schema.json` 的 `triage` 段和
 [docs/report_B_modeling.md](docs/report_B_modeling.md)。
+
+## 预测服务与前端（D）
+
+```bash
+uvicorn app.main:app --port 8000        # API，文档在 http://127.0.0.1:8000/docs
+streamlit run app/frontend.py           # 前端，默认访问 http://127.0.0.1:8000
+```
+
+- `POST /predict`：时间和经纬度必填，其余信息可以部分缺失；车辆与伤亡人员以现场记录列表
+  （`vehicles` / `casualties`，字段名同 DfT 原始表）传入，服务端用 `src.participants.aggregate`
+  聚合成模型输入。返回派单优先级、严重度概率、模型的两条分级界线，以及本次缺失的信息组。
+  请求字段、取值范围和类别编码都由 `schema.json` 生成，NaN、越界值和不带时区的时间返回 422。
+- `GET /model-info`：模型版本、分级界线，以及该模型版本在测试集上的四项验收指标。
+- 模型由环境变量 `MODEL_URI` 指定（如 `models:/road-severity-model@production`，配合
+  `MLFLOW_TRACKING_URI`）。未设置时使用启发式占位模型 `dummy-v1`，接口会标明它是占位、未评估，
+  不能用于实际派单；设置后加载失败会直接报错，不会退回占位模型。
+- 每次预测在 `logs/request_log.jsonl`（可用 `REQUEST_LOG_PATH` 修改）追加一行，包含请求标识、
+  输入、结果与模型版本。
+
+容器编排（API + 前端 + MLflow）：
+
+```bash
+docker compose up --build               # 默认使用占位模型
+```
+
+接入真实模型：把模型训练并注册到编排里的 MLflow，再带上 `MODEL_URI` 重启 API。
+
+```bash
+MLFLOW_TRACKING_URI=http://localhost:5000 python -m src.train
+```
+
+```bash
+MODEL_URI=models:/road-severity-model@production docker compose up -d api
+```
 
 ## 协作规范
 

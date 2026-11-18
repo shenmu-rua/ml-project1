@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  lint:
+    name: ruff 静态检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装 ruff（版本取自 requirements.txt）
+        run: pip install "$(grep '^ruff==' requirements.txt)"
+      - name: ruff check
+        run: ruff check app/ tests/
+
+  test:
+    name: pytest 测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+      - name: 运行测试
+        run: python -m pytest tests/ -v --tb=short
+
+  docker:
+    name: docker compose 冒烟测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 构建并启动三个服务（等待健康检查通过）
+        run: docker compose up --build --detach --wait --wait-timeout 300
+      - name: 访问 API、前端与 MLflow
+        run: |
+          curl --fail --silent --show-error http://localhost:8000/model-info
+          curl --fail --silent --show-error -X POST http://localhost:8000/predict \
+            -H 'Content-Type: application/json' \
+            -d '{"collision_datetime_utc":"2025-01-15T08:30:00+00:00","latitude":51.5,"longitude":-0.1,"speed_limit":30}'
+          curl --fail --silent --show-error http://localhost:8501/_stcore/health
+          curl --fail --silent --show-error http://localhost:5000/health
+          test -s logs/request_log.jsonl
+      - name: 失败时输出容器日志
+        if: failure()
+        run: docker compose logs --no-color --tail 200
