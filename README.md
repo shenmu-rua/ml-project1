@@ -73,6 +73,19 @@ uvicorn app.main:app --port 8000        # API，文档在 http://127.0.0.1:8000/
 streamlit run app/frontend.py           # 前端，默认访问 http://127.0.0.1:8000
 ```
 
+在 Windows PowerShell 中单独启动前端并连接阿里云上的 API：
+
+```powershell
+$env:API_URL = 'https://ml.shenmu.xyz/api'
+python -m streamlit run app/frontend.py
+```
+
+前端的日期、UTC 时间及经纬度必填。道路、天气、车辆与伤亡人员可按实际掌握的信息补填。
+“Load example” 使用 data/processed/collisions_clean.csv 中的一条清洗记录，只包含事故、
+道路和天气字段。道路选项直接读取 schema.json 的英文释义。车辆和伤亡人员表包含预测接口支持的
+全部字段。页面可切换中英文，切换时保留表单和预测结果。字段编码来自 schema.json，
+中文显示名保存在 app/frontend_zh.json，车辆和伤亡人员的英文选项保存在 app/frontend_choices.json。
+
 - `POST /predict`：时间和经纬度必填，其余信息可以部分缺失；车辆与伤亡人员以现场记录列表
   （`vehicles` / `casualties`，字段名同 DfT 原始表）传入，服务端用 `src.participants.aggregate`
   聚合成模型输入。返回派单优先级、严重度概率、模型的两条分级界线，以及本次缺失的信息组。

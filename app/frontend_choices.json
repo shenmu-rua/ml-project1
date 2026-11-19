@@ -1,0 +1,263 @@
+{
+  "example": {
+    "collision_datetime_utc": "2024-09-18T16:00:00+00:00",
+    "latitude": 51.50852,
+    "longitude": -0.10449,
+    "speed_limit": 20,
+    "number_of_vehicles": 1,
+    "road_type": "6",
+    "junction_detail": "19",
+    "junction_control": "4",
+    "pedestrian_crossing": "17",
+    "weather_conditions": "1",
+    "road_surface_conditions": "1",
+    "urban_or_rural_area": "1",
+    "first_road_class": "3",
+    "second_road_class": "3",
+    "light_conditions": "1",
+    "temp": 23.2,
+    "rhum": 53.0,
+    "prcp": 0.0,
+    "wdir": 60.0,
+    "wspd": 24.1,
+    "pres": 1026.0
+  },
+  "vehicle": {
+    "vehicle_type": {
+      "1": "Pedal cycle",
+      "2": "Motorcycle 50cc and under",
+      "3": "Motorcycle 125cc and under",
+      "4": "Motorcycle over 125cc and up to 500cc",
+      "5": "Motorcycle over 500cc",
+      "8": "Taxi or private hire car",
+      "9": "Car",
+      "10": "Minibus (8–16 passenger seats)",
+      "11": "Bus or coach (17+ passenger seats)",
+      "17": "Agricultural vehicle",
+      "19": "Van / Goods 3.5 tonnes mgw or under",
+      "20": "Goods over 3.5t. and under 7.5t",
+      "21": "Goods 7.5 tonnes mgw and over",
+      "22": "Mobility scooter",
+      "23": "Electric motorcycle",
+      "33": "Personal powered transporter",
+      "90": "Other vehicle",
+      "97": "Motorcycle - unknown cc",
+      "98": "Goods vehicle - unknown weight",
+      "99": "Unknown vehicle type (self-reported)"
+    },
+    "towing_and_articulation": {
+      "-1": "Missing or out of range",
+      "0": "None",
+      "1": "Articulated vehicle",
+      "3": "Caravan",
+      "4": "Single trailer",
+      "5": "Other tow",
+      "9": "Unknown (self-reported)"
+    },
+    "propulsion_code": {
+      "-1": "Undefined",
+      "1": "Petrol",
+      "2": "Heavy oil",
+      "3": "Electric",
+      "8": "Hybrid electric",
+      "12": "Electric diesel"
+    },
+    "sex_of_driver": {
+      "-1": "Missing or out of range",
+      "1": "Male",
+      "2": "Female",
+      "3": "Not known"
+    },
+    "journey_purpose_of_driver": {
+      "-1": "Missing or out of range",
+      "1": "Journey as part of work",
+      "2": "Commuting to or from work",
+      "6": "Not known or not requested",
+      "7": "Education and educational escort",
+      "8": "Emergency vehicle (blue light) on response",
+      "9": "Personal business or leisure"
+    },
+    "escooter_flag": {
+      "0": "Vehicle was not an e-scooter",
+      "1": "Vehicle was an e-scooter"
+    },
+    "vehicle_left_hand_drive": {
+      "-1": "Missing or out of range",
+      "1": "No",
+      "2": "Yes",
+      "9": "Unknown"
+    },
+    "vehicle_manoeuvre": {
+      "-1": "Missing or out of range",
+      "1": "Reversing",
+      "2": "Parked",
+      "3": "Waiting to go ahead",
+      "4": "Slowing or stopping",
+      "5": "Moving off",
+      "6": "U-turn",
+      "7": "Turning left",
+      "8": "Waiting to turn left",
+      "9": "Turning right",
+      "10": "Waiting to turn right",
+      "11": "Changing lane to left",
+      "12": "Changing lane to right",
+      "13": "Over taking moving vehicle on its offside",
+      "14": "Overtaking stationary vehicle on its offside",
+      "15": "Overtaking on nearside (passengers side nearest kerb)",
+      "19": "Going ahead",
+      "20": "Parking",
+      "99": "Unknown (self-reported)"
+    },
+    "junction_location": {
+      "-1": "Missing or out of range",
+      "0": "Not at or within 20 metres of junction",
+      "1": "Approaching junction or waiting/parked at junction approach",
+      "2": "Cleared junction or waiting/parked at junction exit",
+      "3": "Leaving roundabout",
+      "4": "Entering roundabout",
+      "5": "Leaving main road",
+      "6": "Entering main road",
+      "7": "Entering from slip road",
+      "8": "Mid Junction - on roundabout or on main road",
+      "9": "Unknown (self-reported)"
+    },
+    "first_point_of_impact": {
+      "-1": "Missing or out of range",
+      "0": "Did not impact",
+      "1": "Front",
+      "2": "Back",
+      "3": "Offside",
+      "4": "Nearside",
+      "9": "Unknown (self-reported)"
+    },
+    "skidding_and_overturning": {
+      "-1": "Missing or out of range",
+      "0": "None",
+      "1": "Skidded",
+      "2": "Skidded and overturned",
+      "5": "Overturned",
+      "9": "Unknown (self-reported)"
+    },
+    "hit_object_in_carriageway": {
+      "-1": "Missing or out of range",
+      "0": "None",
+      "1": "Previous accident",
+      "4": "Parked vehicle",
+      "6": "Bridge (side)",
+      "7": "Bollard or refuge",
+      "8": "Open door of vehicle",
+      "9": "Central island of roundabout",
+      "10": "Kerb",
+      "11": "Other object",
+      "12": "Any animal (except ridden horse)",
+      "99": "Unknown (self-reported)"
+    },
+    "vehicle_leaving_carriageway": {
+      "-1": "Missing or out of range",
+      "0": "Did not leave carriageway",
+      "1": "Nearside",
+      "2": "Nearside and rebounded",
+      "3": "Straight ahead at junction",
+      "4": "Offside on to central reservation",
+      "5": "Offside onto central reservation, then rebounded",
+      "6": "Offside - crossed central reservation",
+      "7": "Offside",
+      "8": "Offside and rebounded",
+      "9": "Unknown (self-reported)"
+    },
+    "hit_object_off_carriageway": {
+      "-1": "Missing or out of range",
+      "0": "None",
+      "1": "Road sign or traffic signal",
+      "2": "Lamp post",
+      "3": "Telegraph or electricity pole",
+      "4": "Tree",
+      "6": "Central crash barrier",
+      "7": "Near/Offside crash barrier",
+      "9": "Entered ditch",
+      "10": "Other permanent object",
+      "11": "Wall or fence",
+      "99": "Unknown (self-reported)"
+    },
+    "vehicle_location_restricted_lane": {
+      "-1": "Missing or out of range",
+      "0": "On main carriageway (not in restricted lane)",
+      "1": "Tram or Light rail track",
+      "2": "Bus lane or Busway",
+      "4": "Cycle lane (on main carriageway)",
+      "5": "Cycleway or shared use footway (not part of main carriageway)",
+      "6": "Lay-by or hard shoulder",
+      "9": "Footway (pavement)",
+      "99": "Unknown (self-reported)"
+    }
+  },
+  "casualty": {
+    "casualty_class": {
+      "1": "Driver or rider",
+      "2": "Passenger",
+      "3": "Pedestrian"
+    },
+    "casualty_type": {
+      "0": "Pedestrian",
+      "1": "Cyclist",
+      "2": "Motorcycle 50cc and under rider or passenger",
+      "3": "Motorcycle 125cc and under rider or passenger",
+      "4": "Motorcycle over 125cc and up to 500cc rider or passenger",
+      "5": "Motorcycle over 500cc rider or passenger",
+      "8": "Taxi/Private hire car occupant",
+      "9": "Car occupant",
+      "10": "Minibus (8 - 16 passenger seats) occupant",
+      "11": "Bus or coach occupant (17 or more pass seats)",
+      "19": "Van / Goods vehicle (3.5 tonnes mgw or under) occupant",
+      "20": "Goods vehicle (over 3.5t. and under 7.5t.) occupant",
+      "21": "Goods vehicle (7.5 tonnes mgw and over) occupant",
+      "22": "Mobility scooter rider",
+      "23": "Code 23 — conflicting source labels",
+      "33": "Code 33 — absent from source guide",
+      "90": "Other vehicle occupant",
+      "97": "Motorcycle - unknown cc rider or passenger",
+      "98": "Goods vehicle (unknown weight) occupant"
+    },
+    "sex_of_casualty": {
+      "-1": "Missing or out of range",
+      "1": "Male",
+      "2": "Female"
+    },
+    "pedestrian_location": {
+      "0": "Not a pedestrian",
+      "1": "Crossing on pedestrian crossing facility",
+      "4": "Crossing elsewhere within 50m. of pedestrian crossing",
+      "5": "In carriageway, crossing elsewhere",
+      "6": "On footway or verge",
+      "7": "On refuge, central island or central reservation",
+      "8": "In centre of carriageway - not on refuge, island or central reservation",
+      "9": "In carriageway, not crossing",
+      "10": "Unknown or other"
+    },
+    "pedestrian_movement": {
+      "0": "Not a pedestrian",
+      "1": "Crossing from driver's nearside",
+      "2": "Crossing from nearside, obscured by a stationary vehicle",
+      "3": "Crossing from driver's offside",
+      "4": "Crossing from offside, obscured by a stationary vehicle",
+      "5": "In carriageway, stationary - not crossing (standing or playing)",
+      "6": "In carriageway, stationary - not crossing (standing or playing) - masked by parked or stationary vehicle",
+      "7": "Walking along in carriageway, facing traffic",
+      "8": "Walking along in carriageway, back to traffic",
+      "9": "Unknown or other"
+    },
+    "car_passenger": {
+      "-1": "Missing or out of range",
+      "0": "Not car passenger",
+      "1": "Front seat passenger",
+      "2": "Rear seat passenger",
+      "9": "Unknown (self-reported)"
+    },
+    "bus_or_coach_passenger": {
+      "-1": "Missing or out of range",
+      "0": "Not a bus or coach passenger",
+      "3": "Standing passenger",
+      "4": "Seated passenger"
+    }
+  }
+}

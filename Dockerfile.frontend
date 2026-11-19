@@ -18,7 +18,8 @@ RUN grep -E '^(streamlit|requests|pandas)==' requirements.txt > frontend-require
     && pip install -r frontend-requirements.txt
 
 COPY schema.json ./schema.json
-COPY app/frontend.py ./app/frontend.py
+COPY .streamlit/config.toml ./.streamlit/config.toml
+COPY app/frontend.py app/frontend.css app/frontend_choices.json app/frontend_zh.json ./app/
 
 EXPOSE 8501
 
