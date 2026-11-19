@@ -66,7 +66,7 @@ mlflow ui --backend-store-uri sqlite:///mlflow.db
 ## 预测服务与前端（D）
 
 网页每次分诊都会请求 `POST /predict?explain=true`，用当前模型的 SHAP 贡献绘制单样本瀑布图。横轴使用 log-odds。
-“查看 API 文档”打开 Swagger UI。反向代理部署时，将前端的 `API_DOCS_URL` 设置为浏览器可访问的文档地址，例如 `https://ml.shenmu.xyz/api/docs`。
+页面顶部的「API 文档 / API Docs」打开 Swagger UI。反向代理部署时，将前端的 `API_DOCS_URL` 设置为浏览器可访问的文档地址，例如 `https://ml.shenmu.xyz/api/docs`。
 
 ```bash
 uvicorn app.main:app --port 8000        # API，文档在 http://127.0.0.1:8000/docs
@@ -81,10 +81,9 @@ python -m streamlit run app/frontend.py
 ```
 
 前端的日期、UTC 时间及经纬度必填。道路、天气、车辆与伤亡人员可按实际掌握的信息补填。
-“Load example” 使用 data/processed/collisions_clean.csv 中的一条清洗记录，只包含事故、
-道路和天气字段。道路选项直接读取 schema.json 的英文释义。车辆和伤亡人员表包含预测接口支持的
-全部字段。页面可切换中英文，切换时保留表单和预测结果。字段编码来自 schema.json，
-中文显示名保存在 app/frontend_zh.json，车辆和伤亡人员的英文选项保存在 app/frontend_choices.json。
+「载入示例 / Load example」使用 `data/processed/collisions_clean.csv` 中的一条清洗记录，填入事故、道路和天气字段。
+车辆和伤亡人员表包含预测接口支持的全部字段。切换中英文时会保留表单和预测结果。
+选项编码来自 `schema.json`，中文显示名来自 `app/frontend_zh.json`，车辆和伤亡人员的英文选项来自 `app/frontend_choices.json`。
 
 - `POST /predict`：时间和经纬度必填，其余信息可以部分缺失；车辆与伤亡人员以现场记录列表
   （`vehicles` / `casualties`，字段名同 DfT 原始表）传入，服务端用 `src.participants.aggregate`

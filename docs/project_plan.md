@@ -28,7 +28,7 @@
 | **A：数据** | 数据与特征 | 数据获取与清洗；简单 EDA（5~8 张图）；特征工程；sklearn `Pipeline/ColumnTransformer`；数据校验（pandera）；DVC 数据版本管理；固定 train/val/test 划分 | `data/`、`src/features.py`、`notebooks/eda.ipynb`、`schema.json` |
 | **B：建模** | 训练与实验追踪 | LR / RF / XGBoost / LightGBM 基线；Optuna 调参；**MLflow 实验追踪**（参数、指标、产物）；**Model Registry** 注册并设置 `production` 别名 | `src/train.py`、MLflow 实验记录、注册模型 |
 | **C：评估** | 评估与解释 | AUC / PR / F1 / 校准曲线；交叉验证；阈值选择；错误分析与分群表现；**SHAP** 全局 + 单样本解释；Evidently 漂移检测；Model Card | `src/evaluate.py`、`src/explain.py`、评估报告、Model Card |
-| **D：上线** | 部署与工程化 | **FastAPI** 预测接口；Web 前端（Streamlit 或 HTML 表单，含 SHAP 单样本瀑布图）；Docker + docker-compose（API + MLflow）；GitHub Actions CI（lint + pytest）；请求日志 | `app/`、`Dockerfile`、`docker-compose.yml`、`.github/workflows/`、`README.md` |
+| **D：上线** | 部署与工程化 | **FastAPI** 预测接口、双语 Streamlit 前端与单样本 SHAP 瀑布图、Docker Compose 编排 API／前端／MLflow、GitHub Actions CI、请求日志 | `app/`、`Dockerfile`、`Dockerfile.frontend`、`docker-compose.yml`、`.github/workflows/`、`README.md` |
 
 ### 2.2 共同任务（每人各 10 分）
 
@@ -121,8 +121,9 @@ ml-project1/
 ├── schema.json                 # 特征、切分与派单分级的共同契约
 ├── dvc.yaml / dvc.lock         # 数据管线配置与依赖校验元数据
 ├── requirements.txt            # 全部依赖（固定版本）
-├── docker-compose.yml          # D（API + MLflow，待建）
-└── .github/workflows/ci.yml    # D（待建）
+├── Dockerfile.frontend         # D：Streamlit 前端镜像
+├── docker-compose.yml          # D：API、前端与 MLflow
+└── .github/workflows/ci.yml    # D：检查、测试与容器冒烟验证
 ```
 
 ---
